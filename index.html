@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#fff8f4">
+<title>Princess Purradise · A little world, just for you</title>
+<meta name="description" content="A little world, just for you. Hop through strawberry skies, collect hearts, and land on your paws in this cozy cat adventure.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%23ec7995'/%3E%3Cpath d='M10 28V11l8 6h4l8-6v17Z' fill='%23fff8f4'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css"><script src="physics.js" defer></script><script src="game.js" defer></script>
+</head>
+<body>
+<div class="site-wrap">
+<header class="masthead"><a class="wordmark" href="./" aria-label="Princess Purradise home"><span class="brand-icon">♔</span> princess purradise<span class="brand-star">✧</span></a><span class="made-for">a little world, just for you <span>♡</span></span><button class="note-link" id="open-note">a note for you <span>↗</span></button></header>
+<main>
+<div class="intro"><div><p class="eyebrow">FOR MY FAVORITE HUMAN</p><h1>Main character. <em>Nine lives.</em></h1><p>Your only plans today: be a cat, chase hearts, cause a little chaos.</p></div><span class="seal">100%<br><b>princess</b><br>energy ✦</span></div>
+<div class="play-layout">
+<section class="game-card" aria-label="Cat obstacle game">
+<div class="game-top"><div class="game-title"><span class="live-dot"></span> THE PURRFECT ESCAPE <span class="edition">a cozy little adventure</span></div><div class="toolbar"><button id="sound" class="icon-button" aria-label="Turn sound on" aria-pressed="false">♪<span class="sound-slash">╱</span></button><button id="pause" class="icon-button" aria-label="Pause game" disabled>Ⅱ</button><button id="fullscreen" class="icon-button" aria-label="Full screen game">⛶</button></div></div>
+<div id="game-stage" class="game-stage"><canvas id="game" tabindex="0" aria-label="Cat obstacle course. Use left and right arrows or A and D to switch lanes. Space or up arrow to jump. P to pause."></canvas>
+<div class="hud"><span class="location-pill"><span id="world-emoji">✿</span> <span id="world-label">Strawberry skies</span></span><div class="stats"><span>♡ <b id="heart-count">0</b></span><span><b id="distance">0</b><small> m</small></span><span class="speed-stat" title="Speed increases exponentially"><b id="speed">1.0</b><small>×</small></span></div></div>
+<div class="game-overlay" id="overlay"><div class="overlay-inner"><img id="loss-photo" class="loss-photo" src="assets/oh-no-you-lost.jpg" alt="Oh no, you lost!" width="900" height="1200" hidden><span class="small-pill" id="overlay-kicker">A WORLD MADE FOR YOU</span><h2 id="overlay-title">Hey, pretty kitty.</h2><p id="overlay-copy">A tiny adventure. A whole lot of heart.<br>Ready to land on your paws?</p><button class="play-button" id="play">Let’s play <span>▸</span></button><span class="start-hint" id="start-hint">← → to move · space to jump</span></div></div>
+<div class="world-caption" id="world-caption">take a breath. take a leap. <span>♡</span></div>
+<div class="touch-controls"><button id="left" aria-label="Move left">←</button><button id="right" aria-label="Move right">→</button><button id="jump" aria-label="Jump">jump ↑</button></div>
+</div>
+<div class="game-bottom"><span><kbd>←</kbd><kbd>→</kbd> move <i></i><kbd>space</kbd> jump <i></i><kbd>P</kbd> pause</span><span>no rush. just paws. <span class="pink">✧</span></span></div>
+</section>
+<aside>
+<section class="player-card"><div class="section-label">MEET THE MAIN CHARACTER <span>✦</span></div><div class="portrait-wrap"><img src="assets/cat-at-work.jpg" alt="A very serious cat in glasses working at a desk" width="896" height="1143"><span class="portrait-tag">literally you</span><span class="portrait-heart">♡</span></div><div class="player-info"><h2>Her royal meowjesty <span>♔</span></h2><p>Professional cutie. Part-time menace.</p><div class="tags"><span>♡ girls’ girl</span><span>✧ cat energy</span></div></div></section>
+<section class="how-card"><span class="section-label">YOUR VERY IMPORTANT MISSION</span><div><span class="mission-icon">↑</span><p><b>Leap a little.</b><br>Jump over treats & tricky gaps.</p></div><div><span class="mission-icon heart">♡</span><p><b>Love a lot.</b><br>Collect hearts along the way.</p></div><p class="last-line">Fall? You get another forever. ♡</p></section>
+</aside>
+</div>
+<section class="world-picker" aria-label="Choose your world"><div class="worlds-heading"><h2>Pick your daydream</h2><span>three little worlds. one very cute cat.</span></div><div class="world-grid"><button class="world-option strawberry selected" data-world="0" aria-pressed="true"><span class="world-number">01</span><span class="world-details"><b>Strawberry skies</b><small>Sweet jumps. Softer landings.</small></span><span class="world-symbol">✿</span><span class="world-check">✓</span></button><button class="world-option lavender" data-world="1" aria-pressed="false"><span class="world-number">02</span><span class="world-details"><b>Lavender letters</b><small>A love letter, one leap at a time.</small></span><span class="world-symbol">⌘</span><span class="world-check">↗</span></button><button class="world-option peach" data-world="2" aria-pressed="false"><span class="world-number">03</span><span class="world-details"><b>Cloud nine</b><small>Head in the clouds. Heart with you.</small></span><span class="world-symbol">☁</span><span class="world-check">↗</span></button></div></section>
+</main><footer><span>made with love, and a concerning amount of cat energy.</span><span>always rooting for you <b>♡</b></span></footer>
+</div>
+<dialog id="note"><button id="close-note" class="close-note" aria-label="Close note">×</button><span class="note-heart">♡</span><p class="eyebrow">JUST A LITTLE REMINDER</p><h2>You’re my favorite<br>kind of magic.</h2><p>So here’s a tiny world where the skies are strawberry, the jumps are soft, and you always get another try.</p><p>For my favorite girl.<br>Stay soft. Be a menace. Be you.</p><span class="note-sign">with all my heart ♡</span></dialog>
+<div class="sr-only" aria-live="polite" id="announcement"></div>
+</body></html>

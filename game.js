@@ -21,6 +21,7 @@ const laneWidth=100,TUTORIAL_KEY='purrfect-gesture-tutorial-seen';
 const runner=new CatPhysics.Runner();
 const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const coarsePointer=window.matchMedia('(pointer: coarse)').matches;
+const lossImage=new Image();lossImage.decoding='async';lossImage.src='assets/oh-no-you-lost.jpg';
 const controlModeButtons=[$('control-buttons'),$('control-gesture')];
 const audioBus=new CatAudio.AudioBus(true),renderEntities=[],routePoseCache=new Map(),unlockedAchievements=new Set();
 let frameCameraRoute=null;
@@ -137,7 +138,7 @@ function beginGesture(event){if(controlMode!=='gesture'||state!=='playing'||even
 function moveGesture(event){const start=gestureStart;if(!start||event.pointerId!==start.pointerId||start.consumed)return;const dx=event.clientX-start.x,dy=event.clientY-start.y,threshold=Math.max(28,Math.min(52,Math.min(W,H)*.07)),action=CatInput.classifyGesture(dx,dy,threshold);if(!action)return;start.consumed=true;if(action==='left')move(-1);else if(action==='right')move(1);else jump();if(navigator.vibrate)navigator.vibrate(8);event.preventDefault();}
 function endGesture(event){const start=gestureStart;if(!start||event.pointerId!==start.pointerId)return;gestureStart=null;try{canvas.releasePointerCapture(event.pointerId);}catch{}event.preventDefault();}
 function cancelGesture(){gestureStart=null;}
-function end(){if(state!=='playing'&&state!=='falling')return;state='lost';lastDeathAt=performance.now();updateGameplayTouchLock();$('pause').disabled=true;$('start-hint').hidden=true;bestScore=Math.max(bestScore,score);bestDistance=Math.max(bestDistance,Math.floor(distance/10));try{localStorage.setItem('purrfect-best-score',String(bestScore));localStorage.setItem('purrfect-best-distance',String(bestDistance));}catch{}const summary=`${score} pts · ${hearts} hearts · ${rewards} stars · ${turnCount} turns · ${Math.floor(distance/10)} m.`;$('overlay').classList.add('hidden');announce('Missed a jump. '+summary);audioBus.cancel();melody([190,150,110],.12,.08,{name:'loss'});}
+function end(){if(state!=='playing'&&state!=='falling')return;state='lost';canvasAchievement=null;lastDeathAt=performance.now();updateGameplayTouchLock();$('pause').disabled=true;$('start-hint').hidden=true;bestScore=Math.max(bestScore,score);bestDistance=Math.max(bestDistance,Math.floor(distance/10));try{localStorage.setItem('purrfect-best-score',String(bestScore));localStorage.setItem('purrfect-best-distance',String(bestDistance));}catch{}const summary=`${score} pts · ${hearts} hearts · ${rewards} stars · ${turnCount} turns · ${Math.floor(distance/10)} m.`;$('overlay').classList.add('hidden');announce('Missed a jump. '+summary);audioBus.cancel();melody([190,150,110],.12,.08,{name:'loss'});}
 function updatePathState(){
  const next=speedPaths.find(path=>distance>=path.start&&distance<path.end&&Math.abs(runner.x-path.lane*laneWidth)<38)||null;
  if(next===activePath)return;
@@ -295,7 +296,8 @@ function drawCat(){
  ctx.strokeStyle='#735140';ctx.lineWidth=4;for(let side of [-1,1]){for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(side*(8+i*7),-76+i*4);ctx.lineTo(side*(5+i*6),-65+i*4);ctx.stroke();}}ctx.strokeStyle='#e495b2';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(-17,-40);ctx.quadraticCurveTo(0,-34,17,-40);ctx.stroke();heart(0,-34,9,'#ffdc9e');ctx.restore();if(state==='playing'&&!runner.grounded){for(let index=0;index<2;index++){ctx.globalAlpha=index<runner.jumpsUsed ? .25 : .9;ellipse(p.x-8+index*16,p.y+18,4,4,'#fff7d0');}ctx.globalAlpha=1;}}
 function decorate(){for(let i=4;i>=0;i--){const z=i*480+250-(distance%480),sign=i%2?1:-1,bob=reduced?0:Math.sin(time+i)*12,p=project(sign*(230+i%2*20),90+bob,z);if(p.y>H+60)continue;ellipse(p.x,p.y,27*p.s,22*p.s,world===1?'#bf8fdd':'#e994b5');ellipse(p.x-8*p.s,p.y-2*p.s,2*p.s,3*p.s,'#785579');ellipse(p.x+8*p.s,p.y-2*p.s,2*p.s,3*p.s,'#785579');ctx.strokeStyle='#785579';ctx.lineWidth=Math.max(.8,p.s);ctx.beginPath();ctx.arc(p.x,p.y+3*p.s,4*p.s,0,Math.PI);ctx.stroke();}}
 function drawBoostEffects(){if(reduced||(!activePath&&boostFlash<.015))return;const intensity=Math.max(boostFlash,activePath ? .45 : 0);ctx.save();ctx.lineCap='round';ctx.lineWidth=1.5;for(let i=0;i<14;i++){const side=i%2?-1:1,phase=(time*(240+i*7)+i*83)%(H+180),y=phase-90,x=side<0?(i*37%Math.max(1,W*.28)):W-(i*43%Math.max(1,W*.28));ctx.globalAlpha=intensity*(.18+(i%4)*.035);ctx.strokeStyle=i%3?'#fff7cf':'#ffffff';ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+(W*.5-x)*.18,y+42+intensity*35);ctx.stroke();}if(boostFlash>.02){ctx.globalAlpha=Math.min(.18,boostFlash*.16);ctx.fillStyle='#fff4bd';ctx.fillRect(0,0,W,H);}ctx.restore();}
-function roundPanel(x,y,w,h,r,fill,stroke){r=Math.min(r,w*.5,h*.5);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}}
+function roundedPath(x,y,w,h,r){r=Math.min(r,w*.5,h*.5);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function roundPanel(x,y,w,h,r,fill,stroke){roundedPath(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}}
 function canvasText(text,x,y,size,color='#63445a',align='left',weight=600){ctx.font=`${weight} ${size}px 'DM Sans',sans-serif`;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillStyle=color;ctx.fillText(text,x,y);}
 function drawCanvasHud(){
  if(state==='ready')return;
@@ -309,13 +311,23 @@ function drawCanvasHud(){
 function drawCanvasNotice(){if(!canvasNotice||canvasAchievement)return;const alpha=canvasNotice.persistent?1:Math.min(1,canvasNotice.remaining*1.8),label=`${canvasNotice.icon}  ${canvasNotice.label}`,w=Math.min(W-36,Math.max(190,label.length*7.5+42));ctx.save();ctx.globalAlpha=alpha;roundPanel((W-w)/2,68,w,39,18,'#5e3d57dc','#fff6');canvasText(label,W/2,88,13,'#fff8e9','center',700);ctx.restore();}
 function drawAchievementUnlock(){
  if(!canvasAchievement)return;
- const a=canvasAchievement,age=a.total-a.remaining,inTime=Math.min(1,age/.18),outTime=Math.min(1,a.remaining/.35),alpha=Math.min(inTime,outTime),compact=W<560,w=Math.min(W-24,500),h=compact?102:108,top=compact?70:62,drop=(1-Math.pow(1-inTime,3))*10-10;
- ctx.save();ctx.globalAlpha=alpha;ctx.translate(W/2,top+h/2+drop);roundPanel(-w/2,-h/2,w,h,20,'#4d3049f2','#ffe7a5');
- canvasText('🏆  ACHIEVEMENT UNLOCKED',0,-h*.3,11,'#ffe39a','center',800);canvasText(a.name,0,-h*.06,compact?21:24,'#fffaf0','center',800);canvasText(a.description,0,h*.19,12,'#ecdce5','center',500);canvasText(`+${a.bonus} POINTS`,0,h*.38,11,'#ffe39a','center',800);ctx.restore();
+ const a=canvasAchievement,age=a.total-a.remaining,inTime=Math.min(1,age/.16),outTime=Math.min(1,a.remaining/.3),alpha=Math.min(inTime,outTime),w=Math.min(W-24,400),h=64,top=W<560?68:58,drop=(1-Math.pow(1-inTime,3))*8-8,left=W/2-w/2;
+ ctx.save();ctx.globalAlpha=alpha;ctx.translate(0,drop);roundPanel(left,top,w,h,16,'#4d3049f2','#ffe7a588');
+ canvasText('🏆',left+25,top+32,19,'#ffe39a','center',700);canvasText('ACHIEVEMENT UNLOCKED',left+48,top+20,9,'#ffe39a','left',800);canvasText(a.name,left+48,top+41,16,'#fffaf0','left',800);canvasText(`+${a.bonus}`,left+w-16,top+32,12,'#ffe39a','right',800);ctx.restore();
 }
 function drawBreakUi(){if(state!=='resting'||!activeHalt)return;const sleep=activeHalt.type==='sleep',w=Math.min(W-36,390);ctx.save();roundPanel((W-w)/2,H*.35,w,122,22,'#51374eea','#fff7d080');canvasText(sleep?'☾  NAP BREAK':'✦  TOILET BREAK',W/2,H*.35+29,16,'#fff0b5','center',800);canvasText(`${Math.ceil(activeHalt.remaining)}s`,W/2,H*.35+65,30,'#fffaf1','center',800);canvasText(activeHalt.elapsed>=1?'tap to skip':'optional pause',W/2,H*.35+96,12,'#e8d6e2','center',500);ctx.restore();}
 function drawCanvasControls(){if(state!=='playing'||controlMode!=='buttons'||!coarsePointer)return;const y=H-82;ctx.save();ctx.globalAlpha=.86;roundPanel(18,y,64,56,16,'#5c3d56b8','#fff8');roundPanel(92,y,64,56,16,'#5c3d56b8','#fff8');roundPanel(W-116,y,98,56,16,'#5c3d56c9','#fff8');canvasText('←',50,y+28,25,'#fff8ed','center');canvasText('→',124,y+28,25,'#fff8ed','center');canvasText('JUMP ×2',W-67,y+28,12,'#fff8ed','center',800);ctx.restore();}
-function drawCanvasStateOverlay(){if(state!=='paused'&&state!=='lost')return;ctx.save();ctx.fillStyle='#3b2638a8';ctx.fillRect(0,0,W,H);const lost=state==='lost';canvasText(lost?'MISSED A STEP':'PAUSED',W/2,H*.43,Math.min(40,W*.085),'#fff8ed','center',800);canvasText(lost?`${score} pts · ${Math.floor(distance/10)} m`:'the paws are waiting',W/2,H*.51,16,'#ffe6b2','center',600);canvasText(lost?'tap to run again':'tap to resume',W/2,H*.59,13,'#f5e7ef','center',500);ctx.restore();}
+function drawCanvasStateOverlay(){
+ if(state!=='paused'&&state!=='lost')return;
+ ctx.save();ctx.fillStyle='#271923c7';ctx.fillRect(0,0,W,H);const lost=state==='lost';
+ if(lost&&lossImage.complete&&lossImage.naturalWidth){
+  const imageH=Math.min(H*.56,430),imageW=imageH*lossImage.naturalWidth/lossImage.naturalHeight,imageX=(W-imageW)/2,imageY=Math.max(62,H*.08);
+  roundPanel(imageX-4,imageY-4,imageW+8,imageH+8,20,'#fff7ef','#ffe6bb');ctx.save();roundedPath(imageX,imageY,imageW,imageH,16);ctx.clip();ctx.drawImage(lossImage,imageX,imageY,imageW,imageH);ctx.restore();
+  const copyY=Math.min(H-76,imageY+imageH+28);canvasText('MISSED A STEP',W/2,copyY,Math.min(28,W*.07),'#fff8ed','center',800);canvasText(`${score} pts · ${Math.floor(distance/10)} m · tap to run again`,W/2,copyY+30,12,'#ffe6b2','center',600);
+ }else if(lost){canvasText('MISSED A STEP',W/2,H*.43,Math.min(40,W*.085),'#fff8ed','center',800);canvasText(`${score} pts · ${Math.floor(distance/10)} m`,W/2,H*.51,16,'#ffe6b2','center',600);canvasText('tap to run again',W/2,H*.59,13,'#f5e7ef','center',500);}
+ else{canvasText('PAUSED',W/2,H*.43,Math.min(40,W*.085),'#fff8ed','center',800);canvasText('the paws are waiting',W/2,H*.51,16,'#ffe6b2','center',600);canvasText('tap to resume',W/2,H*.59,13,'#f5e7ef','center',500);}
+ ctx.restore();
+}
 function drawCanvasUi(){
  drawCanvasHud();drawCanvasNotice();drawBreakUi();drawCanvasControls();drawCanvasStateOverlay();drawAchievementUnlock();
  if(time<canvasHintUntil&&state==='playing'){ctx.save();roundPanel(Math.max(14,W/2-170),H-64,Math.min(W-28,340),40,18,'#51374ed9','#fff7');canvasText('Swipe ← → to move · swipe ↑ to jump',W/2,H-44,12,'#fff8ed','center',700);ctx.restore();}

@@ -15,13 +15,15 @@ let obstacles=[],pickups=[],rewardPickups=[],turnMarkers=[],speedPaths=[],activi
 let courseGeneratedTo=0,courseCursor=0,courseGenerator=null,runSeed=1;
 let jumpAnimation='none',jumpAnimationProgress=1;
 let score=0,combo=1,comboExpiresAt=0,luckyUntil=0,bestScore=0,bestDistance=0,currentEventKey='';
+let boostsEntered=0,doubleJumps=0,napsCompleted=0,toiletsCompleted=0,achievementCooldown=0;
 const laneWidth=100,TUTORIAL_KEY='purrfect-gesture-tutorial-seen';
 const runner=new CatPhysics.Runner();
 const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const controlModeButtons=[$('control-buttons'),$('control-gesture')];
-const audioBus=new CatAudio.AudioBus(true),renderEntities=[];
+const audioBus=new CatAudio.AudioBus(true),renderEntities=[],routePoseCache=new Map(),unlockedAchievements=new Set();
+let frameCameraRoute=null;
 let controlMode='buttons',gestureStart=null,hudSnapshot='',skyGradient=null,skyGlow=null,backdropPaintSize='',lastIdleDraw=0;
-try{controlMode=localStorage.getItem('purrfect-control-mode')==='gesture'?'gesture':'buttons';sound=localStorage.getItem('purrfect-sound')!=='off';bestScore=Number(localStorage.getItem('purrfect-best-score'))||0;bestDistance=Number(localStorage.getItem('purrfect-best-distance'))||0;}catch{}
+try{controlMode=localStorage.getItem('purrfect-control-mode')==='gesture'?'gesture':'buttons';sound=localStorage.getItem('purrfect-sound')!=='off';bestScore=Number(localStorage.getItem('purrfect-best-score'))||0;bestDistance=Number(localStorage.getItem('purrfect-best-distance'))||0;for(const id of JSON.parse(localStorage.getItem('purrfect-achievements')||'[]'))unlockedAchievements.add(id);}catch{}
 audioBus.setEnabled(sound);
 function resize(){const r=canvas.getBoundingClientRect();W=r.width;H=r.height;const cap=window.matchMedia('(pointer: coarse)').matches?1.5:2;dpr=Math.min(window.devicePixelRatio||1,cap);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);updateCamera(0,true);rebuildBackdropPaints();}
 new ResizeObserver(resize).observe(canvas);
@@ -43,8 +45,9 @@ function updateCamera(dt=.016,immediate=false){
  cameraSwayY=damp(cameraSwayY,0,8,dt);
 }
 function rebuildBackdropPaints(){const size=`${W}|${H}|${world}`;if(size===backdropPaintSize)return;const t=themes[world];skyGradient=ctx.createLinearGradient(0,0,0,H);t.sky.forEach((color,index)=>skyGradient.addColorStop(index/2,color));skyGlow=ctx.createRadialGradient(W*.64,H*.15,0,W*.64,H*.15,W*.5);skyGlow.addColorStop(0,'#fff4caad');skyGlow.addColorStop(1,'#fff4ca00');backdropPaintSize=size;}
-function syncControlModeUi(){const gameStarted=!['ready','lost'].includes(state);gameStage.dataset.controlMode=controlMode;gameStage.dataset.gameActive=String(gameStarted);$('control-mode-picker').hidden=gameStarted;$('location-pill').hidden=gameStarted;$('hud').classList.toggle('hud-active',gameStarted);controlModeButtons.forEach(button=>{const selected=button.dataset.controlMode===controlMode;button.setAttribute('aria-pressed',String(selected));});const touchControls=gameStage.querySelector('.touch-controls');if(touchControls)touchControls.setAttribute('aria-hidden',String(controlMode!=='buttons'));if(!gameStarted){gameStage.classList.remove('gesture-tutorial-visible');$('gesture-hint').setAttribute('aria-hidden','true');}}
+function syncControlModeUi(){const gameStarted=!['ready','lost'].includes(state);gameStage.dataset.controlMode=controlMode;gameStage.dataset.gameActive=String(gameStarted);$('control-mode-picker').hidden=gameStarted;$('achievements-button').hidden=gameStarted;$('location-pill').hidden=gameStarted;$('hud').classList.toggle('hud-active',gameStarted);controlModeButtons.forEach(button=>{const selected=button.dataset.controlMode===controlMode;button.setAttribute('aria-pressed',String(selected));});const touchControls=gameStage.querySelector('.touch-controls');if(touchControls)touchControls.setAttribute('aria-hidden',String(controlMode!=='buttons'));if(!gameStarted){gameStage.classList.remove('gesture-tutorial-visible');$('gesture-hint').setAttribute('aria-hidden','true');}}
 function setControlMode(mode){if(mode!=='buttons'&&mode!=='gesture')return;controlMode=mode;try{localStorage.setItem('purrfect-control-mode',mode);}catch{}syncControlModeUi();announce(mode==='gesture'?'Swipe controls enabled. Swipe left or right to move and up to jump.':'Button controls enabled. Use the on-screen arrows and jump button.');}
+function renderAchievements(){const list=$('achievements-list');list.replaceChildren(...CatAchievements.DEFINITIONS.map(item=>{const unlocked=unlockedAchievements.has(item.id),row=document.createElement('div');row.className='achievement-row'+(unlocked?'':' locked');const icon=document.createElement('span'),copy=document.createElement('span'),reward=document.createElement('strong'),title=document.createElement('b'),detail=document.createElement('small');icon.textContent=unlocked?'🏆':'🔒';title.textContent=item.name;detail.textContent=item.description;reward.textContent='+'+item.bonus+' pts';copy.append(title,detail);row.append(icon,copy,reward);return row;}));}
 function nativeFullscreenElement(){return document.fullscreenElement||document.webkitFullscreenElement||null;}
 function fullscreenActive(){return nativeFullscreenElement()===gameStage||gameStage.classList.contains('fullscreen-fallback');}
 function syncFullscreenUi(){const active=fullscreenActive(),label=active?'Exit full screen':'Enter full screen',icon=active?'×':'⛶';fullscreenButtons.forEach(button=>{button.textContent=icon;button.setAttribute('aria-label',label);button.setAttribute('aria-pressed',String(active));button.title=label;});document.body.classList.toggle('fullscreen-fallback-active',gameStage.classList.contains('fullscreen-fallback'));}
@@ -113,10 +116,12 @@ const gapAt=CatPhysics.gapAt,isGap=CatPhysics.isGap;
 function courseLowerBound(items,value,key){let low=0,high=items.length;while(low<high){const middle=(low+high)>>1;if(items[middle][key]<value)low=middle+1;else high=middle;}return low;}
 function forCourseRange(items,min,max,visit,startKey='z',endKey=startKey){if(!items.length)return;let index=courseLowerBound(items,min,startKey);if(endKey!==startKey)while(index>0&&items[index-1][endKey]>=min)index--;for(;index<items.length&&items[index][startKey]<=max;index++){if(items[index][endKey]>=min)visit(items[index]);}}
 function awardPoints(base){if(runner.elapsed>comboExpiresAt)combo=1;const lucky=runner.elapsed<luckyUntil?2:1;score+=base*combo*lucky;combo=Math.min(5,combo+1);comboExpiresAt=runner.elapsed+2.5;}
-function hud(){const speed=(runner.speed/CatPhysics.BASE_SPEED).toFixed(1),comboActive=combo>1&&runner.elapsed<=comboExpiresAt,snapshot=`${hearts}|${rewards}|${turnCount}|${score}|${comboActive?combo:1}|${Math.floor(distance/10)}|${speed}`;if(snapshot===hudSnapshot)return;hudSnapshot=snapshot;$('heart-count').textContent=hearts;$('reward-count').textContent=rewards;$('turn-count').textContent=turnCount;$('score').textContent=score;$('combo').textContent='×'+combo;$('combo').hidden=!comboActive;$('distance').textContent=Math.floor(distance/10);$('speed').textContent=speed;}
+function achievementStats(){return{hearts,doubleJumps,boosts:boostsEntered,turns:turnCount,naps:napsCompleted,toilets:toiletsCompleted,distanceM:Math.floor(distance/10),score};}
+function checkAchievements(dt){achievementCooldown=Math.max(0,achievementCooldown-dt);if(achievementCooldown>0)return;const item=CatAchievements.evaluate(achievementStats(),unlockedAchievements)[0];if(!item)return;unlockedAchievements.add(item.id);score+=item.bonus;achievementCooldown=2.6;try{localStorage.setItem('purrfect-achievements',JSON.stringify([...unlockedAchievements]));}catch{}flashGameEvent('🏆',`${item.name} · +${item.bonus} pts`);melody([520,700,920,1120],.08,.05,{name:'achievement',type:'triangle'});const p=project(x,y+70,22),count=reduced?3:12;for(let i=0;i<count;i++)particles.push({x:p.x,y:p.y,vx:(Math.random()-.5)*150,vy:-80-Math.random()*110,life:1.5,color:i%2?'#ffe49a':'#fff7dc'});announce(`Achievement unlocked: ${item.name}. ${item.description}. ${item.bonus} bonus points.`);hudSnapshot='';}
+function hud(){const speed=(runner.speed/CatPhysics.BASE_SPEED).toFixed(1),comboActive=combo>1&&runner.elapsed<=comboExpiresAt,snapshot=`${hearts}|${rewards}|${turnCount}|${unlockedAchievements.size}|${score}|${comboActive?combo:1}|${Math.floor(distance/10)}|${speed}`;if(snapshot===hudSnapshot)return;hudSnapshot=snapshot;$('heart-count').textContent=hearts;$('reward-count').textContent=rewards;$('turn-count').textContent=turnCount;$('achievement-count').textContent=unlockedAchievements.size;$('score').textContent=score;$('combo').textContent='×'+combo;$('combo').hidden=!comboActive;$('distance').textContent=Math.floor(distance/10);$('speed').textContent=speed;}
 function setWorld(value){if(!Number.isInteger(value)||value<0||value>2)throw new Error('Choose world 0, 1, or 2.');world=value;reset();$('world-label').textContent=themes[world].name;$('world-emoji').textContent=themes[world].icon;document.querySelectorAll('[data-world]').forEach(b=>{const selected=+b.dataset.world===world;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',selected);b.querySelector('.world-check').textContent=selected?'✓':'↗';});announce(themes[world].name+' selected. Ready to play.');}
 function showOverlay(kicker,title,copy,button){clearActivityBanner();$('loss-photo').hidden=state!=='lost';$('overlay').classList.toggle('loss-overlay',state==='lost');$('overlay-kicker').textContent=kicker;$('overlay-title').textContent=title;$('overlay-copy').innerHTML=copy;$('play').innerHTML=button+' <span>▸</span>';$('overlay').classList.remove('hidden');}
-function reset(){state='ready';updateGameplayTouchLock();distance=0;hearts=0;rewards=0;turnCount=0;score=0;combo=1;comboExpiresAt=0;luckyUntil=0;lane=0;x=0;y=0;vy=0;activeHalt=null;pausedFrom='playing';activePath=null;eventMessageTimer=0;jumpAnimation='none';jumpAnimationProgress=1;hudSnapshot='';audioBus.cancel();runner.reset(world,[]);makeCourse();runner.reset(world,obstacles);hideGameEvent();syncRunner();hud();$('pause').disabled=true;$('pause').textContent='Ⅱ';$('pause').setAttribute('aria-label','Pause game');$('world-caption').hidden=false;showOverlay('A WORLD MADE FOR YOU','Hey, pretty kitty.','A tiny adventure. A whole lot of heart.<br>Ready to land on your paws?','Let’s play');$('start-hint').hidden=false;}
+function reset(){state='ready';updateGameplayTouchLock();distance=0;hearts=0;rewards=0;turnCount=0;score=0;combo=1;comboExpiresAt=0;luckyUntil=0;boostsEntered=0;doubleJumps=0;napsCompleted=0;toiletsCompleted=0;achievementCooldown=0;lane=0;x=0;y=0;vy=0;activeHalt=null;pausedFrom='playing';activePath=null;eventMessageTimer=0;jumpAnimation='none';jumpAnimationProgress=1;hudSnapshot='';audioBus.cancel();runner.reset(world,[]);makeCourse();runner.reset(world,obstacles);hideGameEvent();syncRunner();hud();$('pause').disabled=true;$('pause').textContent='Ⅱ';$('pause').setAttribute('aria-label','Pause game');$('world-caption').hidden=false;showOverlay('A WORLD MADE FOR YOU','Hey, pretty kitty.','A tiny adventure. A whole lot of heart.<br>'+unlockedAchievements.size+' of '+CatAchievements.DEFINITIONS.length+' achievements unlocked.','Let’s play');$('start-hint').hidden=false;}
 function showGestureTutorialOnce(){if(controlMode!=='gesture')return;try{if(localStorage.getItem(TUTORIAL_KEY))return;}catch{}gameStage.classList.add('gesture-tutorial-visible');$('gesture-hint').setAttribute('aria-hidden','false');setTimeout(()=>{gameStage.classList.remove('gesture-tutorial-visible');$('gesture-hint').setAttribute('aria-hidden','true');try{localStorage.setItem(TUTORIAL_KEY,'1');}catch{}},3000);}
 function start(){if(state==='paused'){resume();return;}if(state!=='ready')reset();state='playing';updateGameplayTouchLock();$('overlay').classList.add('hidden');$('pause').disabled=false;$('world-caption').hidden=true;canvas.focus({preventScroll:true});showGestureTutorialOnce();melody([420,560,720],.08,.06,{name:'start'});announce('Adventure started. Double jump, follow the automatic bends, chase rewards, and choose accelerated paths.');}
 function pause(){if(state!=='playing'&&state!=='resting')return;pausedFrom=state;state='paused';audioBus.cancel();updateGameplayTouchLock();$('pause').textContent='▸';$('pause').setAttribute('aria-label','Resume game');showOverlay('A LITTLE PAWS','Take your time.','Your daydream will be right here.','Keep going');announce('Game paused.');}
@@ -127,7 +132,7 @@ function beginGesture(event){if(controlMode!=='gesture'||state!=='playing'||even
 function moveGesture(event){const start=gestureStart;if(!start||event.pointerId!==start.pointerId||start.consumed)return;const dx=event.clientX-start.x,dy=event.clientY-start.y,threshold=Math.max(28,Math.min(52,Math.min(W,H)*.07)),action=CatInput.classifyGesture(dx,dy,threshold);if(!action)return;start.consumed=true;if(action==='left')move(-1);else if(action==='right')move(1);else jump();if(navigator.vibrate)navigator.vibrate(8);event.preventDefault();}
 function endGesture(event){const start=gestureStart;if(!start||event.pointerId!==start.pointerId)return;gestureStart=null;try{canvas.releasePointerCapture(event.pointerId);}catch{}event.preventDefault();}
 function cancelGesture(){gestureStart=null;}
-function end(){if(state!=='playing'&&state!=='falling')return;state='lost';lastDeathAt=performance.now();updateGameplayTouchLock();$('pause').disabled=true;$('start-hint').hidden=true;bestScore=Math.max(bestScore,score);bestDistance=Math.max(bestDistance,Math.floor(distance/10));try{localStorage.setItem('purrfect-best-score',String(bestScore));localStorage.setItem('purrfect-best-distance',String(bestDistance));}catch{}const summary=`${score} pts · ${hearts} hearts · ${rewards} stars · ${turnCount} turns · ${Math.floor(distance/10)} m.`;showOverlay('SOFT LANDINGS, ALWAYS','Oh no, you lost!',summary+`<br>Best: ${bestScore} pts · ${bestDistance} m.`,'One more life');announce('Missed a jump. '+summary);audioBus.cancel();melody([190,150,110],.12,.08,{name:'loss'});}
+function end(){if(state!=='playing'&&state!=='falling')return;state='lost';lastDeathAt=performance.now();updateGameplayTouchLock();$('pause').disabled=true;$('start-hint').hidden=true;bestScore=Math.max(bestScore,score);bestDistance=Math.max(bestDistance,Math.floor(distance/10));try{localStorage.setItem('purrfect-best-score',String(bestScore));localStorage.setItem('purrfect-best-distance',String(bestDistance));}catch{}const summary=`${score} pts · ${hearts} hearts · ${rewards} stars · ${turnCount} turns · ${Math.floor(distance/10)} m.`;showOverlay('SOFT LANDINGS, ALWAYS','Oh no, you lost!',summary+`<br>Best: ${bestScore} pts · ${bestDistance} m · 🏆 ${unlockedAchievements.size}/${CatAchievements.DEFINITIONS.length}.`,'One more life');announce('Missed a jump. '+summary);audioBus.cancel();melody([190,150,110],.12,.08,{name:'loss'});}
 function updatePathState(){
  const next=speedPaths.find(path=>distance>=path.start&&distance<path.end&&Math.abs(runner.x-path.lane*laneWidth)<38)||null;
  if(next===activePath)return;
@@ -136,7 +141,7 @@ function updatePathState(){
  runner.pathMultiplier=multiplier;
  runner.speed=CatPhysics.speedAt(runner.elapsed)*multiplier;
  eventMessageTimer=0;
- if(activePath){if(!reduced){cameraFovPunch=.145;boostFlash=1;cameraFocal=Math.max(H*.5,cameraFocal-H*.075);}setGameEvent('⚡',`Accelerated path · ${activePath.multiplier.toFixed(1)}×`);melody([420,620,920],.07,.045,{name:'boost-entry',type:'sawtooth',gain:.045});announce(`Accelerated path active at ${activePath.multiplier.toFixed(1)} times speed.`);}
+ if(activePath){boostsEntered++;if(!reduced){cameraFovPunch=.145;boostFlash=1;cameraFocal=Math.max(H*.5,cameraFocal-H*.075);}setGameEvent('⚡',`Accelerated path · ${activePath.multiplier.toFixed(1)}×`);melody([420,620,920],.07,.045,{name:'boost-entry',type:'sawtooth',gain:.045});announce(`Accelerated path active at ${activePath.multiplier.toFixed(1)} times speed.`);}
  else {hideGameEvent();tone(250,.055);}
 }
 function collectReward(label='Reward +1',icon='✦'){
@@ -171,6 +176,7 @@ function updateHalt(dt){
  $('skip-break').hidden=activeHalt.elapsed<1;
  if(activeHalt.remaining>0)return;
  const type=activeHalt.type;
+ if(type==='sleep')napsCompleted++;else toiletsCompleted++;
  activeHalt=null;
  state='playing';
  updateGameplayTouchLock();
@@ -198,10 +204,11 @@ function handleCourseEvents(previousDistance){
  },'start','end');
 }
 function smoothstep(value){const t=Math.max(0,Math.min(1,value));return t*t*(3-2*t);}
-function routePoseAt(worldZ){let centerX=0,yaw=0;for(const turn of turnMarkers){if(worldZ>=turn.end){centerX+=turn.direction*turn.shift;continue;}if(worldZ>turn.start){const progress=(worldZ-turn.start)/(turn.end-turn.start);centerX+=turn.direction*turn.shift*smoothstep(progress);yaw+=turn.direction*turn.maxYaw*Math.sin(Math.PI*progress);}if(turn.start>worldZ)break;}return{centerX,yaw};}
-function project(wx,wy,wz){const worldZ=distance+wz,route=routePoseAt(worldZ),cameraRoute=routePoseAt(distance+22),relativeX=route.centerX-cameraRoute.centerX+wx-wz*Math.tan(cameraRoute.yaw),s=cameraFocal/Math.max(45,wz+cameraDistance);return{x:W*.5+relativeX*s+cameraSwayX,y:cameraBase+(cameraLookAt-wy)*s+cameraSwayY,s};}
+function routePoseAt(worldZ){const cached=routePoseCache.get(worldZ);if(cached)return cached;let centerX=0,yaw=0;for(const turn of turnMarkers){if(worldZ>=turn.end){centerX+=turn.direction*turn.shift;continue;}if(worldZ>turn.start){const progress=(worldZ-turn.start)/(turn.end-turn.start);centerX+=turn.direction*turn.shift*smoothstep(progress);yaw+=turn.direction*turn.maxYaw*Math.sin(Math.PI*progress);}if(turn.start>worldZ)break;}const pose={centerX,yaw};routePoseCache.set(worldZ,pose);return pose;}
+function project(wx,wy,wz){const worldZ=distance+wz,route=routePoseAt(worldZ),cameraRoute=frameCameraRoute||routePoseAt(distance+22),relativeX=route.centerX-cameraRoute.centerX+wx-wz*Math.tan(cameraRoute.yaw),s=cameraFocal/Math.max(45,wz+cameraDistance);return{x:W*.5+relativeX*s+cameraSwayX,y:cameraBase+(cameraLookAt-wy)*s+cameraSwayY,s};}
 function polygon(points,fill,stroke){ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=.6;ctx.stroke();}}
-function poly3(points,fill,stroke){polygon(points.map(p=>project(...p)),fill,stroke);}
+function poly3(points,fill,stroke){ctx.beginPath();for(let i=0;i<points.length;i++){const p=project(points[i][0],points[i][1],points[i][2]);i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);}ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=.6;ctx.stroke();}}
+function quad3(x1,y1,z1,x2,y2,z2,x3,y3,z3,x4,y4,z4,fill,stroke){const a=project(x1,y1,z1),b=project(x2,y2,z2),c=project(x3,y3,z3),d=project(x4,y4,z4);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.lineTo(d.x,d.y);ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=.6;ctx.stroke();}}
 function box(wx,z,width,depth,height,color,edge,side,base=0){const a=wx-width/2,b=wx+width/2,c=z-depth/2,d=z+depth/2;poly3([[a,base,c],[b,base,c],[b,height,c],[a,height,c]],side);poly3([[b,base,c],[b,base,d],[b,height,d],[b,height,c]],side);poly3([[a,height,c],[b,height,c],[b,height,d],[a,height,d]],color,edge);}
 function ellipse(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,Math.max(.1,rx),Math.max(.1,ry),0,0,Math.PI*2);ctx.fill();}
 function heart(px,py,size,color){ctx.save();ctx.translate(px,py);ctx.scale(size/24,size/24);ctx.beginPath();ctx.moveTo(0,7);ctx.bezierCurveTo(-25,-8,-10,-23,0,-12);ctx.bezierCurveTo(10,-23,25,-8,0,7);ctx.fillStyle=color;ctx.fill();ctx.restore();}
@@ -209,20 +216,21 @@ function star(px,py,size,color){ctx.save();ctx.translate(px,py);ctx.beginPath();
 function backdrop(){rebuildBackdropPaints();ctx.fillStyle=skyGradient;ctx.fillRect(0,0,W,H);ctx.fillStyle=skyGlow;ctx.fillRect(0,0,W,H);
  for(let layer=0;layer<2;layer++){for(let i=-1;i<9;i++){let px=((i*167+layer*79+(reduced?0:Math.sin(time*.035)*35))%(W+220))-70;let py=H*(.57+layer*.19)+Math.sin(i*4+layer)*29;ctx.globalAlpha=layer?.22:.25;ellipse(px,py,100,39,'#fff8e7');ellipse(px+30,py-21,52,39,'#fff8e7');ellipse(px-33,py-12,52,32,'#fff8e7');}}ctx.globalAlpha=1;
  // Floating tiled walls, receding into the dream.
- for(let i=13;i>=0;i--){let z=i*155-(distance%155);for(let row=0;row<3;row++){poly3([[-345,row*115,z],[-345,(row+1)*115,z],[-345,(row+1)*115,z+150],[-345,row*115,z+150]],(i+row)%2?'#dfc9ea5c':'#f5e6f270','#ffffff30');}}
- for(let i=0;i<26;i++){const px=(Math.sin(i*127.1)*.5+.5)*W,py=(Math.cos(i*73.6)*.5+.5)*H;const alpha=.2+(Math.sin(time*(reduced?0:.7)+i)+1)*.2;ctx.fillStyle=`rgba(255,255,245,${alpha})`;ctx.fillRect(px,py,2,2);if(i%5===0){ctx.fillRect(px-3,py+1,8,1);ctx.fillRect(px+1,py-3,1,8);}}
+ const mobile=W<720,wallCount=mobile?8:12,sparkleCount=mobile?16:24;
+ for(let i=wallCount;i>=0;i--){let z=i*175-(distance%175);for(let row=0;row<2;row++){poly3([[-345,row*145,z],[-345,(row+1)*145,z],[-345,(row+1)*145,z+170],[-345,row*145,z+170]],(i+row)%2?'#dfc9ea4d':'#f5e6f25e',null);}}
+ for(let i=0;i<sparkleCount;i++){const px=(Math.sin(i*127.1)*.5+.5)*W,py=(Math.cos(i*73.6)*.5+.5)*H;const alpha=.2+(Math.sin(time*(reduced?0:.7)+i)+1)*.2;ctx.fillStyle=`rgba(255,255,245,${alpha})`;ctx.fillRect(px,py,2,2);if(i%5===0){ctx.fillRect(px-3,py+1,8,1);ctx.fillRect(px+1,py-3,1,8);}}
 }
 // Raised keycaps and soft pads share their visible shape with the physics surface.
 function drawTile(row){
- const t=themes[world],z=row*180-distance,depth=gapAt(row*180+1)?120:179;
+ const t=themes[world],z=row*180-distance,depth=gapAt(row*180+1)?120:179,far=z>950,mid=z>480;
  for(let col=-1;col<=1;col++){
   const surface=runner.tile(row,col),compression=runner.compression(surface.id),top=surface.height;
   const soft=world!==1,spread=soft?compression*.17:0,a=col*laneWidth-48-spread,b=col*laneWidth+48+spread;
   const inset=world===1?7:10;
-  poly3([[a,top,z],[b,top,z],[b,-22,z],[a,-22,z]],t.side);
-  poly3([[b,top,z],[b,top,z+depth-3],[b,-22,z+depth-3],[b,-22,z]],t.side);
-  poly3([[a,top,z],[b,top,z],[b,top,z+depth-3],[a,top,z+depth-3]],t.tile,t.edge);
-  poly3([[a+inset,top+2,z+inset],[b-inset,top+2,z+inset],[b-inset,top+2,z+depth-inset-3],[a+inset,top+2,z+depth-inset-3]],compression>2?t.edge:t.tile,t.edge);
+  if(!far){quad3(a,top,z,b,top,z,b,-22,z,a,-22,z,t.side,null);if(!mid)quad3(b,top,z,b,top,z+depth-3,b,-22,z+depth-3,b,-22,z,t.side,null);}
+  quad3(a,top,z,b,top,z,b,top,z+depth-3,a,top,z+depth-3,t.tile,far?null:t.edge);
+  if(!mid)quad3(a+inset,top+2,z+inset,b-inset,top+2,z+inset,b-inset,top+2,z+depth-inset-3,a+inset,top+2,z+depth-inset-3,compression>2?t.edge:t.tile,t.edge);
+  if(mid)continue;
   const p=project(col*laneWidth,top+3,z+depth/2);
   if(world===1){ctx.save();ctx.translate(p.x,p.y);ctx.scale(1,.62);ctx.font=`600 ${Math.max(8,35*p.s)}px 'DM Sans',sans-serif`;ctx.textAlign='center';ctx.fillStyle=compression>2?'#a77ac4':'#fff6fb';ctx.fillText('YOUARELOVED'[(row*3+col+1)%11],0,8);ctx.restore();}
   else{ctx.globalAlpha=.45;ellipse(p.x,p.y,Math.max(1,3*p.s),Math.max(1,1.6*p.s),t.edge);ctx.globalAlpha=1;}
@@ -284,29 +292,31 @@ function drawCat(){
 function decorate(){for(let i=4;i>=0;i--){const z=i*480+250-(distance%480),sign=i%2?1:-1,bob=reduced?0:Math.sin(time+i)*12,p=project(sign*(230+i%2*20),90+bob,z);if(p.y>H+60)continue;ellipse(p.x,p.y,27*p.s,22*p.s,world===1?'#bf8fdd':'#e994b5');ellipse(p.x-8*p.s,p.y-2*p.s,2*p.s,3*p.s,'#785579');ellipse(p.x+8*p.s,p.y-2*p.s,2*p.s,3*p.s,'#785579');ctx.strokeStyle='#785579';ctx.lineWidth=Math.max(.8,p.s);ctx.beginPath();ctx.arc(p.x,p.y+3*p.s,4*p.s,0,Math.PI);ctx.stroke();}}
 function drawBoostEffects(){if(reduced||(!activePath&&boostFlash<.015))return;const intensity=Math.max(boostFlash,activePath ? .45 : 0);ctx.save();ctx.lineCap='round';ctx.lineWidth=1.5;for(let i=0;i<14;i++){const side=i%2?-1:1,phase=(time*(240+i*7)+i*83)%(H+180),y=phase-90,x=side<0?(i*37%Math.max(1,W*.28)):W-(i*43%Math.max(1,W*.28));ctx.globalAlpha=intensity*(.18+(i%4)*.035);ctx.strokeStyle=i%3?'#fff7cf':'#ffffff';ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+(W*.5-x)*.18,y+42+intensity*35);ctx.stroke();}if(boostFlash>.02){ctx.globalAlpha=Math.min(.18,boostFlash*.16);ctx.fillStyle='#fff4bd';ctx.fillRect(0,0,W,H);}ctx.restore();}
 function draw(){
- ctx.clearRect(0,0,W,H);backdrop();decorate();
- const tiles=[];for(let r=Math.max(0,Math.floor((distance-360)/180));r<Math.ceil((distance+2700)/180);r++)tiles.push(r);
+ routePoseCache.clear();frameCameraRoute=routePoseAt(distance+22);ctx.clearRect(0,0,W,H);backdrop();decorate();
+ const viewDistance=W<720?2200:2500,firstRow=Math.max(0,Math.floor((distance-360)/180)),lastRow=Math.ceil((distance+viewDistance)/180);
  // Below the floor, the platforms occlude the falling cat; otherwise paws stay above them.
  const beneath=y<-24;
  if(beneath)drawCat();
- for(const row of tiles.reverse())drawTile(row);
- const visibleMin=distance-220,visibleMax=distance+2700;
+ for(let row=lastRow-1;row>=firstRow;row--)drawTile(row);
+ const visibleMin=distance-220,visibleMax=distance+viewDistance;
  forCourseRange(speedPaths,visibleMin,visibleMax,drawSpeedPath,'start','end');
- forCourseRange(turnMarkers,distance-400,distance+2900,drawHardTurn,'start','end');
+ forCourseRange(turnMarkers,distance-400,distance+viewDistance+200,drawHardTurn,'start','end');
  forCourseRange(activityStops,visibleMin,visibleMax,drawActivityStop);
  const entities=renderEntities;entities.length=0;
  forCourseRange(obstacles,visibleMin,visibleMax,o=>{const z=o.z-distance,s=runner.shape(o),above=y>=s.height-.5&&Math.abs(x-s.x)<s.width/2+CatPhysics.CAT.halfWidth&&Math.abs(z-22)<s.depth/2+CatPhysics.CAT.halfDepth;entities.push({z:above?23:z-s.depth/2,type:'obstacle',o});});
- forCourseRange(pickups,distance-70,distance+2700,h=>{const z=h.z-distance;if(!h.taken)entities.push({z,type:'heart',h});});
- forCourseRange(rewardPickups,distance-70,distance+2700,r=>{const z=r.z-distance;if(!r.taken)entities.push({z,type:'reward',r});});
+ forCourseRange(pickups,distance-70,visibleMax,h=>{const z=h.z-distance;if(!h.taken)entities.push({z,type:'heart',h});});
+ forCourseRange(rewardPickups,distance-70,visibleMax,r=>{const z=r.z-distance;if(!r.taken)entities.push({z,type:'reward',r});});
  if(!beneath)entities.push({z:22,type:'cat'});
  entities.sort((a,b)=>b.z-a.z);
  for(const e of entities){if(e.type==='cat')drawCat();else if(e.type==='heart')drawPickup(e.h);else if(e.type==='reward')drawReward(e.r);else drawObstacle(e.o);}
  for(const p of particles){ctx.globalAlpha=Math.max(0,Math.min(1,p.life));heart(p.x,p.y,10,p.color);}ctx.globalAlpha=1;
  drawBoostEffects();
+ frameCameraRoute=null;
 }
 function syncRunner(){distance=runner.distance;x=runner.x;y=runner.y;vy=runner.vy;lane=runner.lane;}
 function contactSound(kind,impact){if(!sound)return;if(kind==='key')melody([920,1160],.035,.03,{name:'step-key',cooldown:90});else if(kind==='carton')melody([230,180],.07,.045,{name:'step-carton',cooldown:110});else if(kind==='cloud')melody([520,700],.06,.04,{name:'step-cloud',cooldown:100});else tone(140,Math.min(.11,.045+impact/3000),{name:'step-jelly',cooldown:100});}
 function update(dt){
+ routePoseCache.clear();frameCameraRoute=null;
  if(state==='resting'){
   updateHalt(dt);
   if(state==='resting')runner.tickSprings(Math.min(dt,1/60),false);
@@ -315,7 +325,7 @@ function update(dt){
   if(state==='playing')ensureCourseAhead();
   if(state==='playing')updatePathState();
   const events=runner.advance(dt);syncRunner();
-  for(const event of events){if(event.type==='jump'){triggerJumpAnimation();event.jumpsUsed===2?melody([520,760,980],.08,.045,{name:'double-jump'}):tone(390,.13,{name:'jump'});}else if(event.type==='land'||event.type==='step')contactSound(event.kind,event.impact);else if(event.type==='fall'){state='falling';updateGameplayTouchLock();melody([180,130],.1,.055,{name:'fall'});}else if(event.type==='lost')end();}
+  for(const event of events){if(event.type==='jump'){triggerJumpAnimation();if(event.jumpsUsed===2){doubleJumps++;melody([520,760,980],.08,.045,{name:'double-jump'});}else tone(390,.13,{name:'jump'});}else if(event.type==='land'||event.type==='step')contactSound(event.kind,event.impact);else if(event.type==='fall'){state='falling';updateGameplayTouchLock();melody([180,130],.1,.055,{name:'fall'});}else if(event.type==='lost')end();}
  if(state==='playing'){
    handleCourseEvents(previousDistance);
    if(state==='playing')forCourseRange(pickups,distance-15,distance+60,h=>{const radius=runner.elapsed<luckyUntil?105:42;if(!h.taken&&Math.abs(h.z-distance-22)<33&&Math.abs(h.lane*laneWidth-x)<radius&&y<h.height+20&&y+86>h.height-15){h.taken=true;hearts++;awardPoints(10);melody([620+hearts%5*60,780+hearts%3*50],.06,.04,{name:'heart'});const p=project(x,y+50,22),count=reduced?2:5;for(let i=0;i<count;i++)particles.push({x:p.x,y:p.y,vx:(Math.random()-.5)*80,vy:-60-Math.random()*70,life:1,color:'#fff3b4'});}});
@@ -325,6 +335,7 @@ function update(dt){
  updateCamera(dt);
  updateJumpAnimation(dt);
  updateGameEvent(dt);
+ checkAchievements(dt);
  hud();
  let liveParticles=0;for(let i=0;i<particles.length;i++){const p=particles[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life>0)particles[liveParticles++]=p;}particles.length=liveParticles;
 }
@@ -335,6 +346,9 @@ $('skip-break').addEventListener('click',()=>{if(state==='resting'&&activeHalt&&
  $('sound').addEventListener('click',()=>{sound=!sound;audioBus.setEnabled(sound);try{localStorage.setItem('purrfect-sound',sound?'on':'off');}catch{}syncSoundUi();if(sound)tone(540,.08,{name:'sound-on'});});
 fullscreenButtons.forEach(button=>button.addEventListener('click',toggleFullscreen));
 controlModeButtons.forEach(button=>button.addEventListener('click',()=>setControlMode(button.dataset.controlMode)));
+$('achievements-button').addEventListener('click',()=>{renderAchievements();$('achievements-dialog').showModal();});
+$('close-achievements').addEventListener('click',()=>$('achievements-dialog').close());
+$('achievements-dialog').addEventListener('click',e=>{if(e.target===$('achievements-dialog'))$('achievements-dialog').close();});
 document.addEventListener('fullscreenchange',syncFullscreenUi);
 document.addEventListener('webkitfullscreenchange',syncFullscreenUi);
 for(const [id,action] of [['left',()=>move(-1)],['right',()=>move(1)],['jump',jump]]){$(id).addEventListener('pointerdown',e=>{e.preventDefault();action();});}
@@ -343,7 +357,7 @@ canvas.addEventListener('pointermove',moveGesture,{passive:false});
 canvas.addEventListener('pointerup',endGesture);
 canvas.addEventListener('pointercancel',cancelGesture);
 for(const type of ['touchstart','touchmove','touchend','touchcancel','pointerdown','pointermove','pointerup','pointercancel'])document.addEventListener(type,blockOutsideGameTouch,{capture:true,passive:false});
-document.addEventListener('keydown',e=>{if($('note').open||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;const key=e.code,inGame=e.target===canvas||gameStage.contains(e.target),restart=state==='lost'&&performance.now()-lastDeathAt>250&&['Space','ArrowUp','KeyW'].includes(key);if(restart){e.preventDefault();if(!e.repeat)start();return;}if(['Space','ArrowUp','ArrowLeft','ArrowRight','KeyA','KeyD','KeyW','KeyP','Escape'].includes(key)&&(state==='playing'||state==='paused'||inGame)){e.preventDefault();if(e.repeat)return;if(key==='KeyP'||key==='Escape'){state==='paused'?resume():pause();return;}if(state!=='playing'){if(key==='Space'||key==='ArrowUp')start();return;}if(['Space','ArrowUp','KeyW'].includes(key))jump();if(['ArrowLeft','KeyA'].includes(key))move(-1);if(['ArrowRight','KeyD'].includes(key))move(1);}});
+document.addEventListener('keydown',e=>{if($('note').open||$('achievements-dialog').open||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;const key=e.code,inGame=e.target===canvas||gameStage.contains(e.target),restart=state==='lost'&&performance.now()-lastDeathAt>250&&['Space','ArrowUp','KeyW'].includes(key);if(restart){e.preventDefault();if(!e.repeat)start();return;}if(['Space','ArrowUp','ArrowLeft','ArrowRight','KeyA','KeyD','KeyW','KeyP','Escape'].includes(key)&&(state==='playing'||state==='paused'||inGame)){e.preventDefault();if(e.repeat)return;if(key==='KeyP'||key==='Escape'){state==='paused'?resume():pause();return;}if(state!=='playing'){if(key==='Space'||key==='ArrowUp')start();return;}if(['Space','ArrowUp','KeyW'].includes(key))jump();if(['ArrowLeft','KeyA'].includes(key))move(-1);if(['ArrowRight','KeyD'].includes(key))move(1);}});
 document.querySelectorAll('[data-world]').forEach(b=>b.addEventListener('click',()=>setWorld(+b.dataset.world)));
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
 window.addEventListener('blur',()=>pause());

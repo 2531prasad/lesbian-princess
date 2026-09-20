@@ -107,6 +107,10 @@ body.game-touch-locked {
   color: #9871b3;
 }
 
+.stats .achievement-stat {
+  color: #9b713f;
+}
+
 .score-stat {
   display: inline-flex;
   align-items: baseline;
@@ -123,6 +127,55 @@ body.game-touch-locked {
 .mission-icon.boost {
   background: #fff0cf;
   color: #cb8c4b;
+}
+
+.achievements-dialog h2 {
+  margin-bottom: 18px;
+}
+
+.achievements-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(55vh, 420px);
+  overflow: auto;
+  text-align: left;
+}
+
+.achievement-row {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #eadde2;
+  border-radius: 12px;
+  background: #fffdf9;
+}
+
+.achievement-row.locked {
+  opacity: .52;
+}
+
+.achievement-row span:first-child {
+  font-size: 20px;
+  text-align: center;
+}
+
+.achievement-row b,
+.achievement-row small {
+  display: block;
+}
+
+.achievement-row small {
+  margin-top: 2px;
+  color: #917b83;
+  font-size: 10px;
+}
+
+.achievement-row strong {
+  color: #b77a45;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .game-event {

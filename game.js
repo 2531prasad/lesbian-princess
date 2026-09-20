@@ -9,7 +9,7 @@ const themes = [
  {name:'Lavender letters',icon:'⌘',sky:['#ead1fa','#d6c8ee','#f0cfe2'],tile:'#d1bbed',side:'#aa8ac9',edge:'#efe1ff',accent:'#a379ce',wall:'#dccbf0'},
  {name:'Cloud nine',icon:'☁',sky:['#f9d5a4','#f8ddd0','#e6d9f3'],tile:'#ffdeb8',side:'#dcac92',edge:'#fff0d6',accent:'#e6ac71',wall:'#edd5cb'}
 ];
-let W=800,H=490,dpr=1,cameraFocal=H*1.14,cameraDistance=430,cameraBase=H*.29,cameraLookAt=225,world=0,state='ready',distance=0,hearts=0,rewards=0,turnCount=0,lane=0,x=0,y=0,vy=0,time=0,last=0,flight=0,fall=0,sound=true,audio;
+let W=800,H=490,dpr=1,cameraFocal=H*1.14,cameraDistance=430,cameraBase=H*.29,cameraLookAt=225,cameraSwayX=0,cameraSwayY=0,world=0,state='ready',distance=0,hearts=0,rewards=0,turnCount=0,lane=0,x=0,y=0,vy=0,time=0,last=0,flight=0,fall=0,sound=true,audio;
 let activeHalt=null,pausedFrom='playing',activePath=null,eventMessageTimer=0;
 let obstacles=[],pickups=[],rewardPickups=[],turnMarkers=[],speedPaths=[],activityStops=[],particles=[],jumpBuffer=0;
 let courseGeneratedTo=0,obstacleIndex=0,pickupIndex=0,rewardIndex=0,speedFeatureIndex=0,turnFeatureIndex=0,stopFeatureIndex=0,nextObstacleId=0;
@@ -24,9 +24,25 @@ try{controlMode=localStorage.getItem('purrfect-control-mode')==='gesture'?'gestu
 function resize(){const r=canvas.getBoundingClientRect();W=r.width;H=r.height;dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);updateCamera();rebuildBackdropPaints();}
 new ResizeObserver(resize).observe(canvas);
 function announce(text){$('announcement').textContent=text;}
-function updateCamera(){const mobileFrame=W<720||W/Math.max(1,H)<.9;cameraDistance=mobileFrame?620:430;cameraFocal=H*(mobileFrame?.9:1.14);cameraLookAt=225;const catScale=cameraFocal/(cameraDistance+22);cameraBase=mobileFrame?H*.74-cameraLookAt*catScale:H*.29;}
+function updateCamera(){
+ const mobileFrame=W<720||W/Math.max(1,H)<.9;
+ const baseDistance=mobileFrame?520:430;
+ const baseFocal=mobileFrame?.96:1.14;
+ const fovRamp=Math.min(mobileFrame?.24:.16,runner.elapsed*(mobileFrame?.0018:.0012));
+ const pathFov=activePath?(mobileFrame?.14:.1):0;
+ cameraDistance=baseDistance-(activePath?(mobileFrame?24:12):0);
+ cameraFocal=H*Math.max(mobileFrame?.54:.86,baseFocal-fovRamp-pathFov);
+ cameraLookAt=225;
+ const catScale=cameraFocal/(cameraDistance+22);
+ cameraBase=mobileFrame?H*.74-cameraLookAt*catScale:H*.29;
+ const speedEnergy=Math.min(1.6,runner.elapsed*.012);
+ if(reduced){cameraSwayX=0;cameraSwayY=0;return;}
+ const swayAmount=Math.min(mobileFrame?8:3,1+speedEnergy*(mobileFrame?4:1.5));
+ cameraSwayX=Math.sin(time*(1.6+speedEnergy*.8))*swayAmount;
+ cameraSwayY=Math.cos(time*(1.3+speedEnergy*.6))*swayAmount*.35+(activePath?Math.sin(time*12)*2:0);
+}
 function rebuildBackdropPaints(){const size=`${W}|${H}|${world}`;if(size===backdropPaintSize)return;const t=themes[world];skyGradient=ctx.createLinearGradient(0,0,0,H);t.sky.forEach((color,index)=>skyGradient.addColorStop(index/2,color));skyGlow=ctx.createRadialGradient(W*.64,H*.15,0,W*.64,H*.15,W*.5);skyGlow.addColorStop(0,'#fff4caad');skyGlow.addColorStop(1,'#fff4ca00');backdropPaintSize=size;}
-function syncControlModeUi(){const gameStarted=!['ready','lost','won'].includes(state);gameStage.dataset.controlMode=controlMode;gameStage.dataset.gameActive=String(gameStarted);$('control-mode-picker').hidden=gameStarted;controlModeButtons.forEach(button=>{const selected=button.dataset.controlMode===controlMode;button.setAttribute('aria-pressed',String(selected));});const touchControls=gameStage.querySelector('.touch-controls');if(touchControls)touchControls.setAttribute('aria-hidden',String(controlMode!=='buttons'));$('gesture-hint').setAttribute('aria-hidden',String(!(controlMode==='gesture'&&gameStarted)));}
+function syncControlModeUi(){const gameStarted=!['ready','lost','won'].includes(state);gameStage.dataset.controlMode=controlMode;gameStage.dataset.gameActive=String(gameStarted);$('control-mode-picker').hidden=gameStarted;$('location-pill').hidden=gameStarted;$('hud').classList.toggle('hud-active',gameStarted);controlModeButtons.forEach(button=>{const selected=button.dataset.controlMode===controlMode;button.setAttribute('aria-pressed',String(selected));});const touchControls=gameStage.querySelector('.touch-controls');if(touchControls)touchControls.setAttribute('aria-hidden',String(controlMode!=='buttons'));$('gesture-hint').setAttribute('aria-hidden',String(!(controlMode==='gesture'&&gameStarted)));}
 function setControlMode(mode){if(mode!=='buttons'&&mode!=='gesture')return;controlMode=mode;try{localStorage.setItem('purrfect-control-mode',mode);}catch{}syncControlModeUi();announce(mode==='gesture'?'Swipe controls enabled. Swipe left or right to move and up to jump.':'Button controls enabled. Use the on-screen arrows and jump button.');}
 function nativeFullscreenElement(){return document.fullscreenElement||document.webkitFullscreenElement||null;}
 function fullscreenActive(){return nativeFullscreenElement()===gameStage||gameStage.classList.contains('fullscreen-fallback');}
@@ -201,7 +217,7 @@ function handleCourseEvents(previousDistance){
   announce(`Automatic hard turn ${turn.direction<0?'left':'right'} completed. Reward earned.`);
  });
 }
-function project(wx,wy,wz){const s=cameraFocal/Math.max(45,wz+cameraDistance);return{x:W*.5+wx*s,y:cameraBase+(cameraLookAt-wy)*s,s};}
+function project(wx,wy,wz){const s=cameraFocal/Math.max(45,wz+cameraDistance);return{x:W*.5+wx*s+cameraSwayX,y:cameraBase+(cameraLookAt-wy)*s+cameraSwayY,s};}
 function polygon(points,fill,stroke){ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=.6;ctx.stroke();}}
 function poly3(points,fill,stroke){polygon(points.map(p=>project(...p)),fill,stroke);}
 function box(wx,z,width,depth,height,color,edge,side,base=0){const a=wx-width/2,b=wx+width/2,c=z-depth/2,d=z+depth/2;poly3([[a,base,c],[b,base,c],[b,height,c],[a,height,c]],side);poly3([[b,base,c],[b,base,d],[b,height,d],[b,height,c]],side);poly3([[a,height,c],[b,height,c],[b,height,d],[a,height,d]],color,edge);}
@@ -324,6 +340,7 @@ function update(dt){
    if(state==='playing')forCourseRange(rewardPickups,distance-20,distance+65,r=>{if(!r.taken&&Math.abs(r.z-distance-22)<36&&Math.abs(r.lane*laneWidth-x)<44&&y<r.height+22&&y+86>r.height-15){r.taken=true;collectReward();}});
  }
  }else runner.tickSprings(Math.min(dt,1/60),false);
+ updateCamera();
  updateJumpAnimation(dt);
  updateGameEvent(dt);
  hud();

@@ -79,6 +79,14 @@ body.game-touch-locked {
   display: block;
 }
 
+.hud.hud-active {
+  justify-content: flex-end;
+}
+
+.location-pill {
+  white-space: nowrap;
+}
+
 .stats .collectible-stat {
   display: flex;
   align-items: center;

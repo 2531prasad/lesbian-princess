@@ -47,7 +47,7 @@
   }
   class Runner {
     constructor(world=0,obstacles=[]){this.reset(world,obstacles);}
-    reset(world=0,obstacles=[]){Object.assign(this,{world,obstacles,distance:0,elapsed:0,speed:BASE_SPEED,pathMultiplier:1,x:0,lane:0,y:world===1?10:0,vy:0,grounded:true,support:'tile:0:0',jumpQueued:0,coyoteRemaining:.08,jumpsUsed:0,status:'playing',squash:0,accumulator:0,fallTime:0});this.obstaclesSorted=true;for(let i=1;i<obstacles.length;i++)if(obstacles[i-1].z>obstacles[i].z){this.obstaclesSorted=false;break;}this.elevationCache=new Map();this.springs=new Map();this.events=[];}
+    reset(world=0,obstacles=[]){Object.assign(this,{world,obstacles,distance:0,elapsed:0,speed:BASE_SPEED,pathMultiplier:1,x:0,lane:0,y:world===1?10:0,vy:0,grounded:true,support:'tile:0:0',jumpQueued:0,coyoteRemaining:.08,jumpsUsed:0,jetpack:false,jetpackFuel:0,status:'playing',squash:0,accumulator:0,fallTime:0});this.obstaclesSorted=true;for(let i=1;i<obstacles.length;i++)if(obstacles[i-1].z>obstacles[i].z){this.obstaclesSorted=false;break;}this.elevationCache=new Map();this.springs=new Map();this.events=[];}
     spring(id,kind){let s=this.springs.get(id);if(!s){s={id,kind,amount:0,velocity:0};this.springs.set(id,s);}return s;}
     compression(id){return this.springs.get(id)?.amount||0;}
     baseHeight(row,col){const key=`${row}:${col}`;let height=this.elevationCache.get(key);if(height===undefined){height=(this.world===1?10:0)+elevationAt(this.world,row,col);this.elevationCache.set(key,height);}return height;}
@@ -79,11 +79,11 @@
       for(const [id,s] of this.springs){const p=properties[s.kind],target=loaded&&this.grounded&&this.support===id?p.weight:0;s.velocity+=((target-s.amount)*p.stiffness-s.velocity*p.damping)*dt;s.amount+=s.velocity*dt;if(s.amount>p.travel){s.amount=p.travel;s.velocity=Math.min(0,s.velocity)*.3;}if(s.amount<0){s.amount=0;s.velocity=Math.max(0,s.velocity)*.3;}const row=id.startsWith('tile:')?Number(id.split(':')[1]):null;if(row!==null&&row*180<this.distance-700)this.springs.delete(id);}
       this.squash*=Math.exp(-10*dt);
     }
-    land(surface,impact){const changed=!this.grounded||this.support!==surface.id,queued=this.jumpQueued>0;this.y=surface.height;this.vy=0;this.grounded=true;this.support=surface.id;this.jumpsUsed=0;this.coyoteRemaining=.08;const spring=this.spring(surface.id,surface.kind);if(changed){spring.velocity+=Math.min(150,25+impact*.18);this.squash=Math.min(1,impact/420);this.events.push({type:impact>80?'land':'step',kind:surface.kind,impact});}if(queued)this.launch();}
+    land(surface,impact){const changed=!this.grounded||this.support!==surface.id,queued=this.jumpQueued>0;this.y=surface.height;this.vy=0;this.grounded=true;this.support=surface.id;this.jumpsUsed=0;this.coyoteRemaining=.08;this.jetpack=false;const spring=this.spring(surface.id,surface.kind);if(changed){spring.velocity+=Math.min(150,25+impact*.18);this.squash=Math.min(1,impact/420);this.events.push({type:impact>80?'land':'step',kind:surface.kind,impact});}if(queued)this.launch();}
     advance(dt){this.accumulator+=Math.min(.2,Math.max(0,dt));while(this.accumulator>=1/120){this.step(1/120);this.accumulator-=1/120;}return this.events.splice(0);}
     step(dt){
       if(this.status!=='playing'){this.tickSprings(dt,false);if(this.status==='falling'){const gravity=(WORLD_RULES[this.world]||WORLD_RULES[0]).gravity;this.vy-=gravity*.5*dt;this.y+=this.vy*dt;this.fallTime+=dt;if(this.fallTime>.5){this.status='lost';this.events.push({type:'lost',reason:'gap'});}}return;}
-      const rules=WORLD_RULES[this.world]||WORLD_RULES[0];
+      const rules=WORLD_RULES[this.world]||WORLD_RULES[0],jetpackWasActive=this.jetpack&&this.jetpackFuel>0;
       this.tickSprings(dt);this.jumpQueued=Math.max(0,this.jumpQueued-dt);this.coyoteRemaining=Math.max(0,this.coyoteRemaining-dt);
       const old={x:this.x,y:this.y,z:this.distance+CAT.z},previousElapsed=this.elapsed;
       this.elapsed+=dt;this.speed=speedAt(this.elapsed)*this.pathMultiplier;
@@ -91,9 +91,9 @@
       const next={x:this.x+(this.lane*100-this.x)*(1-Math.exp(-rules.laneSharpness*dt)),y:this.y,z:old.z+travel};
       let existing=this.grounded?this.supportAt(next.x,next.z,this.y+24):null;
       if(existing&&existing.id!==this.support){const bothTiles=existing.id.startsWith('tile:')&&this.support?.startsWith('tile:'),rise=existing.height-this.y;if((bothTiles&&(rise>28||rise<-2))||(!bothTiles&&Math.abs(rise)>2))existing=null;}
-      if(existing){next.y=existing.height;this.vy=0;}else{if(this.grounded)this.coyoteRemaining=.08;this.grounded=false;this.support=null;next.y+=this.vy*dt-.5*rules.gravity*dt*dt;this.vy-=rules.gravity*dt;}
+      if(existing){next.y=existing.height;this.vy=0;}else{if(this.grounded)this.coyoteRemaining=.08;this.grounded=false;this.support=null;let acceleration=-rules.gravity;if(this.jetpack&&this.jetpackFuel>0){const burn=Math.min(dt,this.jetpackFuel),powered=burn/dt,target=this.baseHeightAt(next.x,next.z)+125,hover=clamp((target-this.y)*16-this.vy*4,-rules.gravity*.7,1800);acceleration=-rules.gravity+(hover+rules.gravity)*powered;this.jetpackFuel=Math.max(0,this.jetpackFuel-burn);if(this.jetpackFuel<=1e-6){this.jetpackFuel=0;this.jetpack=false;this.events.push({type:'jetpack-empty'});}}next.y+=this.vy*dt+.5*acceleration*dt*dt;this.vy=clamp(this.vy+acceleration*dt,-900,620);}
       let collision=null;
-      this.forNearbyObstacles(old.z-140,next.z+160,o=>{const s=this.shape(o);if(s.z+s.depth/2<old.z-80||s.z-s.depth/2>next.z+120)return;
+      this.forNearbyObstacles(old.z-140,next.z+160,o=>{if(jetpackWasActive)return;const s=this.shape(o);if(s.z+s.depth/2<old.z-80||s.z-s.depth/2>next.z+120)return;
         // Standing on a surface is not a penetration of its solid volume.
         if(old.y>=s.height-.1&&next.y>=s.height-.1)return;
         const hit=sweep(old,next,{x:[s.x-s.width/2-CAT.halfWidth,s.x+s.width/2+CAT.halfWidth],y:[-CAT.height,s.height],z:[s.z-s.depth/2-CAT.halfDepth,s.z+s.depth/2+CAT.halfDepth]});
@@ -106,7 +106,7 @@
       this.x=next.x;this.distance=next.z-CAT.z;
       const floor=this.supportAt(next.x,next.z,old.y+.1);
       if(existing){this.land(existing,0);}else if(floor&&next.y<=floor.height&&old.y>=floor.height-.1&&this.vy<=0){this.land(floor,Math.abs(this.vy));}else this.y=next.y;
-      if(!this.grounded&&this.y<-25){this.status='falling';this.fallTime=0;this.events.push({type:'fall'});}
+      if(!this.grounded&&this.y<-25&&!jetpackWasActive){this.status='falling';this.fallTime=0;this.events.push({type:'fall'});}
     }
   }
   return{Runner,CAT,BASE_SPEED,MAX_BASE_SPEED,SPEED_TAU,FINISH,WORLD_RULES,speedAt,distanceAt,storyHeight,elevationAt,gapAt,isGap,sweep,properties};

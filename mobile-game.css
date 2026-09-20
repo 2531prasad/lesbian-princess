@@ -415,3 +415,8 @@ body.fullscreen-fallback-active {
     transition: none;
   }
 }
+.game-stage[data-game-active="true"] > :not(canvas),
+.game-stage:fullscreen > :not(canvas),
+.game-stage.fullscreen-fallback > :not(canvas) {
+  display: none !important;
+}

@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 const canvas = $('game'), ctx = canvas.getContext('2d');
 const gameStage = $('game-stage');
-const fullscreenButtons = [$('fullscreen'), $('stage-fullscreen')];
+const fullscreenButtons = [$('fullscreen')];
 const themes = [
  {name:'Strawberry skies',icon:'✿',sky:['#f7c6b5','#f4d5d9','#ddcbef'],tile:'#f5b5c3',side:'#d992ac',edge:'#ffe4e9',accent:'#ed788d',wall:'#e2c9ef'},
  {name:'Lavender letters',icon:'⌘',sky:['#ead1fa','#d6c8ee','#f0cfe2'],tile:'#d1bbed',side:'#aa8ac9',edge:'#efe1ff',accent:'#a379ce',wall:'#dccbf0'},
@@ -15,17 +15,19 @@ let obstacles=[],pickups=[],rewardPickups=[],turnMarkers=[],speedPaths=[],activi
 let courseGeneratedTo=0,courseCursor=0,courseGenerator=null,runSeed=1;
 let jumpAnimation='none',jumpAnimationProgress=1;
 let score=0,combo=1,comboExpiresAt=0,luckyUntil=0,bestScore=0,bestDistance=0,currentEventKey='';
-let boostsEntered=0,doubleJumps=0,napsCompleted=0,toiletsCompleted=0,achievementCooldown=0;
+let boostsEntered=0,doubleJumps=0,napsCompleted=0,toiletsCompleted=0,achievementCooldown=0,achievementPoll=0;
+let canvasNotice=null,canvasAchievement=null,canvasHintUntil=0;
 const laneWidth=100,TUTORIAL_KEY='purrfect-gesture-tutorial-seen';
 const runner=new CatPhysics.Runner();
 const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const coarsePointer=window.matchMedia('(pointer: coarse)').matches;
 const controlModeButtons=[$('control-buttons'),$('control-gesture')];
 const audioBus=new CatAudio.AudioBus(true),renderEntities=[],routePoseCache=new Map(),unlockedAchievements=new Set();
 let frameCameraRoute=null;
 let controlMode='buttons',gestureStart=null,hudSnapshot='',skyGradient=null,skyGlow=null,backdropPaintSize='',lastIdleDraw=0;
 try{controlMode=localStorage.getItem('purrfect-control-mode')==='gesture'?'gesture':'buttons';sound=localStorage.getItem('purrfect-sound')!=='off';bestScore=Number(localStorage.getItem('purrfect-best-score'))||0;bestDistance=Number(localStorage.getItem('purrfect-best-distance'))||0;for(const id of JSON.parse(localStorage.getItem('purrfect-achievements')||'[]'))unlockedAchievements.add(id);}catch{}
 audioBus.setEnabled(sound);
-function resize(){const r=canvas.getBoundingClientRect();W=r.width;H=r.height;const cap=window.matchMedia('(pointer: coarse)').matches?1.5:2;dpr=Math.min(window.devicePixelRatio||1,cap);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);updateCamera(0,true);rebuildBackdropPaints();}
+function resize(){const r=canvas.getBoundingClientRect();W=r.width;H=r.height;const cap=coarsePointer?1.5:2;dpr=Math.min(window.devicePixelRatio||1,cap);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);updateCamera(0,true);rebuildBackdropPaints();}
 new ResizeObserver(resize).observe(canvas);
 function announce(text){$('announcement').textContent=text;}
 function damp(current,target,sharpness,dt){return current+(target-current)*(1-Math.exp(-sharpness*dt));}
@@ -45,7 +47,7 @@ function updateCamera(dt=.016,immediate=false){
  cameraSwayY=damp(cameraSwayY,0,8,dt);
 }
 function rebuildBackdropPaints(){const size=`${W}|${H}|${world}`;if(size===backdropPaintSize)return;const t=themes[world];skyGradient=ctx.createLinearGradient(0,0,0,H);t.sky.forEach((color,index)=>skyGradient.addColorStop(index/2,color));skyGlow=ctx.createRadialGradient(W*.64,H*.15,0,W*.64,H*.15,W*.5);skyGlow.addColorStop(0,'#fff4caad');skyGlow.addColorStop(1,'#fff4ca00');backdropPaintSize=size;}
-function syncControlModeUi(){const gameStarted=!['ready','lost'].includes(state);gameStage.dataset.controlMode=controlMode;gameStage.dataset.gameActive=String(gameStarted);$('control-mode-picker').hidden=gameStarted;$('achievements-button').hidden=gameStarted;$('location-pill').hidden=gameStarted;$('hud').classList.toggle('hud-active',gameStarted);controlModeButtons.forEach(button=>{const selected=button.dataset.controlMode===controlMode;button.setAttribute('aria-pressed',String(selected));});const touchControls=gameStage.querySelector('.touch-controls');if(touchControls)touchControls.setAttribute('aria-hidden',String(controlMode!=='buttons'));if(!gameStarted){gameStage.classList.remove('gesture-tutorial-visible');$('gesture-hint').setAttribute('aria-hidden','true');}}
+function syncControlModeUi(){const gameStarted=state!=='ready';gameStage.dataset.controlMode=controlMode;gameStage.dataset.gameActive=String(gameStarted);$('control-mode-picker').hidden=gameStarted;$('achievements-button').hidden=gameStarted;$('hud').hidden=gameStarted;controlModeButtons.forEach(button=>{const selected=button.dataset.controlMode===controlMode;button.setAttribute('aria-pressed',String(selected));});}
 function setControlMode(mode){if(mode!=='buttons'&&mode!=='gesture')return;controlMode=mode;try{localStorage.setItem('purrfect-control-mode',mode);}catch{}syncControlModeUi();announce(mode==='gesture'?'Swipe controls enabled. Swipe left or right to move and up to jump.':'Button controls enabled. Use the on-screen arrows and jump button.');}
 function renderAchievements(){const list=$('achievements-list');list.replaceChildren(...CatAchievements.DEFINITIONS.map(item=>{const unlocked=unlockedAchievements.has(item.id),row=document.createElement('div');row.className='achievement-row'+(unlocked?'':' locked');const icon=document.createElement('span'),copy=document.createElement('span'),reward=document.createElement('strong'),title=document.createElement('b'),detail=document.createElement('small');icon.textContent=unlocked?'🏆':'🔒';title.textContent=item.name;detail.textContent=item.description;reward.textContent='+'+item.bonus+' pts';copy.append(title,detail);row.append(icon,copy,reward);return row;}));}
 function nativeFullscreenElement(){return document.fullscreenElement||document.webkitFullscreenElement||null;}
@@ -54,6 +56,7 @@ function syncFullscreenUi(){const active=fullscreenActive(),label=active?'Exit f
 function leaveFallbackFullscreen(){gameStage.classList.remove('fullscreen-fallback');syncFullscreenUi();}
 function enterFallbackFullscreen(){gameStage.classList.add('fullscreen-fallback');syncFullscreenUi();announce('Full-screen view enabled. Tap the button again to exit.');}
 async function toggleFullscreen(){
+ if(!fullscreenActive()&&state==='ready')start(false);
  if(fullscreenActive()){
   if(nativeFullscreenElement()){
    try{if(document.exitFullscreen)await document.exitFullscreen();else if(document.webkitExitFullscreen)document.webkitExitFullscreen();}
@@ -81,13 +84,13 @@ function blockOutsideGameTouch(event){
  event.preventDefault();
  event.stopPropagation();
 }
-function setGameEvent(icon,label){const key=icon+'|'+label;if(key!==currentEventKey){currentEventKey=key;$('game-event-icon').textContent=icon;$('game-event-label').textContent=label;}$('game-event').hidden=false;}
-function hideGameEvent(){currentEventKey='';$('game-event').hidden=true;}
+function setGameEvent(icon,label){const key=icon+'|'+label;if(key===currentEventKey&&canvasNotice)return;currentEventKey=key;canvasNotice={icon,label,persistent:true,remaining:Infinity};}
+function hideGameEvent(){currentEventKey='';canvasNotice=null;}
 function restorePathEvent(){if(activePath)setGameEvent('⚡',`Accelerated path · ${activePath.multiplier.toFixed(1)}×`);else if(runner.elapsed<luckyUntil)setGameEvent('✦',`Lucky Paws · ${Math.ceil(luckyUntil-runner.elapsed)}s`);else hideGameEvent();}
-function flashGameEvent(icon,label){setGameEvent(icon,label);eventMessageTimer=1.8;}
-function updateGameEvent(dt){if(eventMessageTimer>0){eventMessageTimer=Math.max(0,eventMessageTimer-dt);if(eventMessageTimer===0)restorePathEvent();}else restorePathEvent();}
-function setActivityBanner(stop){$('activity-icon').textContent=stop.type==='sleep'?'☾':'🚽';$('activity-title').textContent=stop.type==='sleep'?'Nap time':'Bathroom break';$('activity-detail').textContent=stop.type==='sleep'?'Resting paws for up to ten seconds':'A quick break of up to five seconds';$('activity-timer').textContent=`${Math.ceil(stop.remaining??stop.duration)}s`;$('skip-break').hidden=(stop.elapsed||0)<1;$('activity-banner').hidden=false;}
-function clearActivityBanner(){$('activity-banner').hidden=true;$('skip-break').hidden=true;}
+function flashGameEvent(icon,label){currentEventKey=icon+'|'+label;canvasNotice={icon,label,persistent:false,remaining:1.8};eventMessageTimer=1.8;}
+function updateGameEvent(dt){if(canvasNotice&&!canvasNotice.persistent)canvasNotice.remaining=Math.max(0,canvasNotice.remaining-dt);if(eventMessageTimer>0){eventMessageTimer=Math.max(0,eventMessageTimer-dt);if(eventMessageTimer===0)restorePathEvent();}else restorePathEvent();if(canvasAchievement){canvasAchievement.remaining=Math.max(0,canvasAchievement.remaining-dt);if(canvasAchievement.remaining===0)canvasAchievement=null;}}
+function setActivityBanner(){}
+function clearActivityBanner(){}
 function tone(frequency=500,duration=.1,options={}){audioBus.tone(frequency,duration,options);}
 function melody(notes,duration=.08,spacing=.055,options={}){audioBus.melody(notes,duration,spacing,options);}
 function syncSoundUi(){const button=$('sound');button.setAttribute('aria-pressed',String(sound));button.setAttribute('aria-label',sound?'Turn sound off':'Turn sound on');button.querySelector('.sound-slash').hidden=sound;}
@@ -117,14 +120,14 @@ function courseLowerBound(items,value,key){let low=0,high=items.length;while(low
 function forCourseRange(items,min,max,visit,startKey='z',endKey=startKey){if(!items.length)return;let index=courseLowerBound(items,min,startKey);if(endKey!==startKey)while(index>0&&items[index-1][endKey]>=min)index--;for(;index<items.length&&items[index][startKey]<=max;index++){if(items[index][endKey]>=min)visit(items[index]);}}
 function awardPoints(base){if(runner.elapsed>comboExpiresAt)combo=1;const lucky=runner.elapsed<luckyUntil?2:1;score+=base*combo*lucky;combo=Math.min(5,combo+1);comboExpiresAt=runner.elapsed+2.5;}
 function achievementStats(){return{hearts,doubleJumps,boosts:boostsEntered,turns:turnCount,naps:napsCompleted,toilets:toiletsCompleted,distanceM:Math.floor(distance/10),score};}
-function checkAchievements(dt){achievementCooldown=Math.max(0,achievementCooldown-dt);if(achievementCooldown>0)return;const item=CatAchievements.evaluate(achievementStats(),unlockedAchievements)[0];if(!item)return;unlockedAchievements.add(item.id);score+=item.bonus;achievementCooldown=2.6;try{localStorage.setItem('purrfect-achievements',JSON.stringify([...unlockedAchievements]));}catch{}flashGameEvent('🏆',`${item.name} · +${item.bonus} pts`);melody([520,700,920,1120],.08,.05,{name:'achievement',type:'triangle'});const p=project(x,y+70,22),count=reduced?3:12;for(let i=0;i<count;i++)particles.push({x:p.x,y:p.y,vx:(Math.random()-.5)*150,vy:-80-Math.random()*110,life:1.5,color:i%2?'#ffe49a':'#fff7dc'});announce(`Achievement unlocked: ${item.name}. ${item.description}. ${item.bonus} bonus points.`);hudSnapshot='';}
-function hud(){const speed=(runner.speed/CatPhysics.BASE_SPEED).toFixed(1),comboActive=combo>1&&runner.elapsed<=comboExpiresAt,snapshot=`${hearts}|${rewards}|${turnCount}|${unlockedAchievements.size}|${score}|${comboActive?combo:1}|${Math.floor(distance/10)}|${speed}`;if(snapshot===hudSnapshot)return;hudSnapshot=snapshot;$('heart-count').textContent=hearts;$('reward-count').textContent=rewards;$('turn-count').textContent=turnCount;$('achievement-count').textContent=unlockedAchievements.size;$('score').textContent=score;$('combo').textContent='×'+combo;$('combo').hidden=!comboActive;$('distance').textContent=Math.floor(distance/10);$('speed').textContent=speed;}
+function checkAchievements(dt){achievementCooldown=Math.max(0,achievementCooldown-dt);achievementPoll=Math.max(0,achievementPoll-dt);if(achievementCooldown>0||achievementPoll>0||state!=='playing')return;achievementPoll=.25;const item=CatAchievements.evaluate(achievementStats(),unlockedAchievements)[0];if(!item)return;unlockedAchievements.add(item.id);score+=item.bonus;achievementCooldown=3.8;canvasAchievement={name:item.name,description:item.description,bonus:item.bonus,remaining:3.6,total:3.6};try{localStorage.setItem('purrfect-achievements',JSON.stringify([...unlockedAchievements]));}catch{}melody([520,700,920,1120],.08,.05,{name:'achievement',type:'triangle'});const p=project(x,y+70,22),count=reduced?3:12;for(let i=0;i<count;i++)particles.push({x:p.x,y:p.y,vx:(Math.random()-.5)*150,vy:-80-Math.random()*110,life:1.5,color:i%2?'#ffe49a':'#fff7dc'});announce(`Achievement unlocked: ${item.name}. ${item.description}. ${item.bonus} bonus points.`);hudSnapshot='';}
+function hud(){const speed=(runner.speed/CatPhysics.BASE_SPEED).toFixed(1),comboActive=combo>1&&runner.elapsed<=comboExpiresAt,snapshot=`${hearts}|${rewards}|${turnCount}|${unlockedAchievements.size}|${score}|${comboActive?combo:1}|${Math.floor(distance/10)}|${speed}`;if(snapshot===hudSnapshot)return;hudSnapshot=snapshot;if(!['ready','lost'].includes(state))return;$('heart-count').textContent=hearts;$('reward-count').textContent=rewards;$('turn-count').textContent=turnCount;$('achievement-count').textContent=unlockedAchievements.size;$('score').textContent=score;$('combo').textContent='×'+combo;$('combo').hidden=!comboActive;$('distance').textContent=Math.floor(distance/10);$('speed').textContent=speed;}
 function setWorld(value){if(!Number.isInteger(value)||value<0||value>2)throw new Error('Choose world 0, 1, or 2.');world=value;reset();$('world-label').textContent=themes[world].name;$('world-emoji').textContent=themes[world].icon;document.querySelectorAll('[data-world]').forEach(b=>{const selected=+b.dataset.world===world;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',selected);b.querySelector('.world-check').textContent=selected?'✓':'↗';});announce(themes[world].name+' selected. Ready to play.');}
 function showOverlay(kicker,title,copy,button){clearActivityBanner();$('loss-photo').hidden=state!=='lost';$('overlay').classList.toggle('loss-overlay',state==='lost');$('overlay-kicker').textContent=kicker;$('overlay-title').textContent=title;$('overlay-copy').innerHTML=copy;$('play').innerHTML=button+' <span>▸</span>';$('overlay').classList.remove('hidden');}
-function reset(){state='ready';updateGameplayTouchLock();distance=0;hearts=0;rewards=0;turnCount=0;score=0;combo=1;comboExpiresAt=0;luckyUntil=0;boostsEntered=0;doubleJumps=0;napsCompleted=0;toiletsCompleted=0;achievementCooldown=0;lane=0;x=0;y=0;vy=0;activeHalt=null;pausedFrom='playing';activePath=null;eventMessageTimer=0;jumpAnimation='none';jumpAnimationProgress=1;hudSnapshot='';audioBus.cancel();runner.reset(world,[]);makeCourse();runner.reset(world,obstacles);hideGameEvent();syncRunner();hud();$('pause').disabled=true;$('pause').textContent='Ⅱ';$('pause').setAttribute('aria-label','Pause game');$('world-caption').hidden=false;showOverlay('A WORLD MADE FOR YOU','Hey, pretty kitty.','A tiny adventure. A whole lot of heart.<br>'+unlockedAchievements.size+' of '+CatAchievements.DEFINITIONS.length+' achievements unlocked.','Let’s play');$('start-hint').hidden=false;}
-function showGestureTutorialOnce(){if(controlMode!=='gesture')return;try{if(localStorage.getItem(TUTORIAL_KEY))return;}catch{}gameStage.classList.add('gesture-tutorial-visible');$('gesture-hint').setAttribute('aria-hidden','false');setTimeout(()=>{gameStage.classList.remove('gesture-tutorial-visible');$('gesture-hint').setAttribute('aria-hidden','true');try{localStorage.setItem(TUTORIAL_KEY,'1');}catch{}},3000);}
-function start(){if(state==='paused'){resume();return;}if(state!=='ready')reset();state='playing';updateGameplayTouchLock();$('overlay').classList.add('hidden');$('pause').disabled=false;$('world-caption').hidden=true;canvas.focus({preventScroll:true});showGestureTutorialOnce();melody([420,560,720],.08,.06,{name:'start'});announce('Adventure started. Double jump, follow the automatic bends, chase rewards, and choose accelerated paths.');}
-function pause(){if(state!=='playing'&&state!=='resting')return;pausedFrom=state;state='paused';audioBus.cancel();updateGameplayTouchLock();$('pause').textContent='▸';$('pause').setAttribute('aria-label','Resume game');showOverlay('A LITTLE PAWS','Take your time.','Your daydream will be right here.','Keep going');announce('Game paused.');}
+function reset(){state='ready';updateGameplayTouchLock();distance=0;hearts=0;rewards=0;turnCount=0;score=0;combo=1;comboExpiresAt=0;luckyUntil=0;boostsEntered=0;doubleJumps=0;napsCompleted=0;toiletsCompleted=0;achievementCooldown=0;achievementPoll=0;lane=0;x=0;y=0;vy=0;activeHalt=null;pausedFrom='playing';activePath=null;eventMessageTimer=0;jumpAnimation='none';jumpAnimationProgress=1;hudSnapshot='';audioBus.cancel();runner.reset(world,[]);makeCourse();runner.reset(world,obstacles);hideGameEvent();syncRunner();hud();$('pause').disabled=true;$('pause').textContent='Ⅱ';$('pause').setAttribute('aria-label','Pause game');$('world-caption').hidden=false;showOverlay('A WORLD MADE FOR YOU','Hey, pretty kitty.','A tiny adventure. A whole lot of heart.<br>'+unlockedAchievements.size+' of '+CatAchievements.DEFINITIONS.length+' achievements unlocked.','Let’s play');$('start-hint').hidden=false;}
+function showGestureTutorialOnce(){if(controlMode!=='gesture')return;try{if(localStorage.getItem(TUTORIAL_KEY))return;}catch{}canvasHintUntil=time+3;try{localStorage.setItem(TUTORIAL_KEY,'1');}catch{}}
+function start(autoFullscreen=true){if(state==='paused'){resume();return;}if(state!=='ready')reset();state='playing';updateGameplayTouchLock();$('overlay').classList.add('hidden');$('pause').disabled=false;$('world-caption').hidden=true;canvas.focus({preventScroll:true});showGestureTutorialOnce();if(autoFullscreen&&coarsePointer&&!fullscreenActive())toggleFullscreen();melody([420,560,720],.08,.06,{name:'start'});announce('Adventure started. Double jump, follow the automatic bends, chase rewards, and choose accelerated paths.');}
+function pause(){if(state!=='playing'&&state!=='resting')return;pausedFrom=state;state='paused';audioBus.cancel();updateGameplayTouchLock();$('pause').textContent='▸';$('pause').setAttribute('aria-label','Resume game');$('overlay').classList.add('hidden');announce('Game paused.');}
 function resume(){state=pausedFrom==='resting'?'resting':'playing';updateGameplayTouchLock();last=performance.now();$('overlay').classList.add('hidden');if(state==='resting'&&activeHalt)setActivityBanner(activeHalt);$('pause').textContent='Ⅱ';$('pause').setAttribute('aria-label','Pause game');canvas.focus({preventScroll:true});}
 function jump(){if(state==='playing')runner.jump();}
 function move(direction){if(state==='playing'){const previousLane=runner.lane;runner.steer(direction);lane=runner.lane;if(lane!==previousLane)tone(direction<0?310:360,.045);}}
@@ -132,7 +135,7 @@ function beginGesture(event){if(controlMode!=='gesture'||state!=='playing'||even
 function moveGesture(event){const start=gestureStart;if(!start||event.pointerId!==start.pointerId||start.consumed)return;const dx=event.clientX-start.x,dy=event.clientY-start.y,threshold=Math.max(28,Math.min(52,Math.min(W,H)*.07)),action=CatInput.classifyGesture(dx,dy,threshold);if(!action)return;start.consumed=true;if(action==='left')move(-1);else if(action==='right')move(1);else jump();if(navigator.vibrate)navigator.vibrate(8);event.preventDefault();}
 function endGesture(event){const start=gestureStart;if(!start||event.pointerId!==start.pointerId)return;gestureStart=null;try{canvas.releasePointerCapture(event.pointerId);}catch{}event.preventDefault();}
 function cancelGesture(){gestureStart=null;}
-function end(){if(state!=='playing'&&state!=='falling')return;state='lost';lastDeathAt=performance.now();updateGameplayTouchLock();$('pause').disabled=true;$('start-hint').hidden=true;bestScore=Math.max(bestScore,score);bestDistance=Math.max(bestDistance,Math.floor(distance/10));try{localStorage.setItem('purrfect-best-score',String(bestScore));localStorage.setItem('purrfect-best-distance',String(bestDistance));}catch{}const summary=`${score} pts · ${hearts} hearts · ${rewards} stars · ${turnCount} turns · ${Math.floor(distance/10)} m.`;showOverlay('SOFT LANDINGS, ALWAYS','Oh no, you lost!',summary+`<br>Best: ${bestScore} pts · ${bestDistance} m · 🏆 ${unlockedAchievements.size}/${CatAchievements.DEFINITIONS.length}.`,'One more life');announce('Missed a jump. '+summary);audioBus.cancel();melody([190,150,110],.12,.08,{name:'loss'});}
+function end(){if(state!=='playing'&&state!=='falling')return;state='lost';lastDeathAt=performance.now();updateGameplayTouchLock();$('pause').disabled=true;$('start-hint').hidden=true;bestScore=Math.max(bestScore,score);bestDistance=Math.max(bestDistance,Math.floor(distance/10));try{localStorage.setItem('purrfect-best-score',String(bestScore));localStorage.setItem('purrfect-best-distance',String(bestDistance));}catch{}const summary=`${score} pts · ${hearts} hearts · ${rewards} stars · ${turnCount} turns · ${Math.floor(distance/10)} m.`;$('overlay').classList.add('hidden');announce('Missed a jump. '+summary);audioBus.cancel();melody([190,150,110],.12,.08,{name:'loss'});}
 function updatePathState(){
  const next=speedPaths.find(path=>distance>=path.start&&distance<path.end&&Math.abs(runner.x-path.lane*laneWidth)<38)||null;
  if(next===activePath)return;
@@ -172,8 +175,6 @@ function updateHalt(dt){
  if(!activeHalt)return;
  activeHalt.elapsed+=dt;
  activeHalt.remaining=Math.max(0,activeHalt.remaining-dt);
- $('activity-timer').textContent=`${Math.ceil(activeHalt.remaining)}s`;
- $('skip-break').hidden=activeHalt.elapsed<1;
  if(activeHalt.remaining>0)return;
  const type=activeHalt.type;
  if(type==='sleep')napsCompleted++;else toiletsCompleted++;
@@ -291,6 +292,32 @@ function drawCat(){
  ctx.strokeStyle='#735140';ctx.lineWidth=4;for(let side of [-1,1]){for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(side*(8+i*7),-76+i*4);ctx.lineTo(side*(5+i*6),-65+i*4);ctx.stroke();}}ctx.strokeStyle='#e495b2';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(-17,-40);ctx.quadraticCurveTo(0,-34,17,-40);ctx.stroke();heart(0,-34,9,'#ffdc9e');ctx.restore();if(state==='playing'&&!runner.grounded){for(let index=0;index<2;index++){ctx.globalAlpha=index<runner.jumpsUsed ? .25 : .9;ellipse(p.x-8+index*16,p.y+18,4,4,'#fff7d0');}ctx.globalAlpha=1;}}
 function decorate(){for(let i=4;i>=0;i--){const z=i*480+250-(distance%480),sign=i%2?1:-1,bob=reduced?0:Math.sin(time+i)*12,p=project(sign*(230+i%2*20),90+bob,z);if(p.y>H+60)continue;ellipse(p.x,p.y,27*p.s,22*p.s,world===1?'#bf8fdd':'#e994b5');ellipse(p.x-8*p.s,p.y-2*p.s,2*p.s,3*p.s,'#785579');ellipse(p.x+8*p.s,p.y-2*p.s,2*p.s,3*p.s,'#785579');ctx.strokeStyle='#785579';ctx.lineWidth=Math.max(.8,p.s);ctx.beginPath();ctx.arc(p.x,p.y+3*p.s,4*p.s,0,Math.PI);ctx.stroke();}}
 function drawBoostEffects(){if(reduced||(!activePath&&boostFlash<.015))return;const intensity=Math.max(boostFlash,activePath ? .45 : 0);ctx.save();ctx.lineCap='round';ctx.lineWidth=1.5;for(let i=0;i<14;i++){const side=i%2?-1:1,phase=(time*(240+i*7)+i*83)%(H+180),y=phase-90,x=side<0?(i*37%Math.max(1,W*.28)):W-(i*43%Math.max(1,W*.28));ctx.globalAlpha=intensity*(.18+(i%4)*.035);ctx.strokeStyle=i%3?'#fff7cf':'#ffffff';ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+(W*.5-x)*.18,y+42+intensity*35);ctx.stroke();}if(boostFlash>.02){ctx.globalAlpha=Math.min(.18,boostFlash*.16);ctx.fillStyle='#fff4bd';ctx.fillRect(0,0,W,H);}ctx.restore();}
+function roundPanel(x,y,w,h,r,fill,stroke){r=Math.min(r,w*.5,h*.5);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}}
+function canvasText(text,x,y,size,color='#63445a',align='left',weight=600){ctx.font=`${weight} ${size}px 'DM Sans',sans-serif`;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillStyle=color;ctx.fillText(text,x,y);}
+function drawCanvasHud(){
+ if(state==='ready')return;
+ const compact=W<560,top=compact?14:20,pad=compact?10:14,hudRight=fullscreenActive()?W-66:W-12,w=compact?hudRight-12:Math.min(620,hudRight-12),height=compact?58:42;
+ ctx.save();roundPanel(12,top-12,w,height,18,'#fffaf0e8','#ffffff99');
+ canvasText(`♡ ${hearts}   ✦ ${rewards}   ↪ ${turnCount}   🏆 ${unlockedAchievements.size}`,12+pad,compact?top+4:top+9,compact?13:15,'#71475f');
+ const comboLabel=combo>1&&runner.elapsed<=comboExpiresAt?` · combo ×${combo}`:'';
+ const right=12+w-pad;canvasText(`${score} pts · ${Math.floor(distance/10)} m · ${(runner.speed/CatPhysics.BASE_SPEED).toFixed(1)}×${comboLabel}`,right,compact?top+30:top+9,compact?11:14,'#71475f','right',500);
+ ctx.restore();
+}
+function drawCanvasNotice(){if(!canvasNotice||canvasAchievement)return;const alpha=canvasNotice.persistent?1:Math.min(1,canvasNotice.remaining*1.8),label=`${canvasNotice.icon}  ${canvasNotice.label}`,w=Math.min(W-36,Math.max(190,label.length*7.5+42));ctx.save();ctx.globalAlpha=alpha;roundPanel((W-w)/2,68,w,39,18,'#5e3d57dc','#fff6');canvasText(label,W/2,88,13,'#fff8e9','center',700);ctx.restore();}
+function drawAchievementUnlock(){
+ if(!canvasAchievement)return;
+ const a=canvasAchievement,age=a.total-a.remaining,inTime=Math.min(1,age/.22),outTime=Math.min(1,a.remaining/.42),alpha=Math.min(inTime,outTime),scale=.88+.12*(1-Math.pow(1-inTime,3)),w=Math.min(W-30,540),h=W<520?170:186;
+ ctx.save();ctx.globalAlpha=alpha;ctx.translate(W/2,H*.34);ctx.scale(scale,scale);roundPanel(-w/2,-h/2,w,h,24,'#4d3049f2','#ffe7a5');
+ canvasText('🏆',0,-h*.29,28,'#ffe39a','center',700);canvasText('ACHIEVEMENT UNLOCKED',0,-h*.08,12,'#ffe39a','center',800);canvasText(a.name,0,h*.12,W<520?24:30,'#fffaf0','center',800);canvasText(a.description,0,h*.31,13,'#ecdce5','center',500);canvasText(`+${a.bonus} POINTS`,0,h*.45,12,'#ffe39a','center',800);ctx.restore();
+}
+function drawBreakUi(){if(state!=='resting'||!activeHalt)return;const sleep=activeHalt.type==='sleep',w=Math.min(W-36,390);ctx.save();roundPanel((W-w)/2,H*.35,w,122,22,'#51374eea','#fff7d080');canvasText(sleep?'☾  NAP BREAK':'✦  TOILET BREAK',W/2,H*.35+29,16,'#fff0b5','center',800);canvasText(`${Math.ceil(activeHalt.remaining)}s`,W/2,H*.35+65,30,'#fffaf1','center',800);canvasText(activeHalt.elapsed>=1?'tap to skip':'optional pause',W/2,H*.35+96,12,'#e8d6e2','center',500);ctx.restore();}
+function drawCanvasControls(){if(state!=='playing'||controlMode!=='buttons'||!coarsePointer)return;const y=H-82;ctx.save();ctx.globalAlpha=.86;roundPanel(18,y,64,56,16,'#5c3d56b8','#fff8');roundPanel(92,y,64,56,16,'#5c3d56b8','#fff8');roundPanel(W-116,y,98,56,16,'#5c3d56c9','#fff8');canvasText('←',50,y+28,25,'#fff8ed','center');canvasText('→',124,y+28,25,'#fff8ed','center');canvasText('JUMP ×2',W-67,y+28,12,'#fff8ed','center',800);ctx.restore();}
+function drawCanvasStateOverlay(){if(state!=='paused'&&state!=='lost')return;ctx.save();ctx.fillStyle='#3b2638a8';ctx.fillRect(0,0,W,H);const lost=state==='lost';canvasText(lost?'MISSED A STEP':'PAUSED',W/2,H*.43,Math.min(40,W*.085),'#fff8ed','center',800);canvasText(lost?`${score} pts · ${Math.floor(distance/10)} m`:'the paws are waiting',W/2,H*.51,16,'#ffe6b2','center',600);canvasText(lost?'tap to run again':'tap to resume',W/2,H*.59,13,'#f5e7ef','center',500);ctx.restore();}
+function drawCanvasUi(){
+ drawCanvasHud();drawCanvasNotice();drawBreakUi();drawCanvasControls();drawCanvasStateOverlay();drawAchievementUnlock();
+ if(time<canvasHintUntil&&state==='playing'){ctx.save();roundPanel(Math.max(14,W/2-170),H-64,Math.min(W-28,340),40,18,'#51374ed9','#fff7');canvasText('Swipe ← → to move · swipe ↑ to jump',W/2,H-44,12,'#fff8ed','center',700);ctx.restore();}
+ if(fullscreenActive()&&state!=='ready')canvasText('×',W-28,28,28,'#fff8ed','center',500);
+}
 function draw(){
  routePoseCache.clear();frameCameraRoute=routePoseAt(distance+22);ctx.clearRect(0,0,W,H);backdrop();decorate();
  const viewDistance=W<720?2200:2500,firstRow=Math.max(0,Math.floor((distance-360)/180)),lastRow=Math.ceil((distance+viewDistance)/180);
@@ -311,6 +338,7 @@ function draw(){
  for(const e of entities){if(e.type==='cat')drawCat();else if(e.type==='heart')drawPickup(e.h);else if(e.type==='reward')drawReward(e.r);else drawObstacle(e.o);}
  for(const p of particles){ctx.globalAlpha=Math.max(0,Math.min(1,p.life));heart(p.x,p.y,10,p.color);}ctx.globalAlpha=1;
  drawBoostEffects();
+ drawCanvasUi();
  frameCameraRoute=null;
 }
 function syncRunner(){distance=runner.distance;x=runner.x;y=runner.y;vy=runner.vy;lane=runner.lane;}
@@ -342,7 +370,6 @@ function update(dt){
 function frame(now){const dt=Math.min(.1,(now-last)/1000||.016);last=now;const active=state==='playing'||state==='falling'||state==='resting';if(active){time+=dt;update(dt);draw();}else if(state!=='paused'&&now-lastIdleDraw>100){lastIdleDraw=now;time+=dt;update(dt);draw();}else if(state==='paused'&&now-lastIdleDraw>250){lastIdleDraw=now;draw();}requestAnimationFrame(frame);}
 $('play').addEventListener('click',start);
 $('pause').addEventListener('click',()=>state==='paused'?resume():pause());
-$('skip-break').addEventListener('click',()=>{if(state==='resting'&&activeHalt&&activeHalt.elapsed>=1)activeHalt.remaining=0;});
  $('sound').addEventListener('click',()=>{sound=!sound;audioBus.setEnabled(sound);try{localStorage.setItem('purrfect-sound',sound?'on':'off');}catch{}syncSoundUi();if(sound)tone(540,.08,{name:'sound-on'});});
 fullscreenButtons.forEach(button=>button.addEventListener('click',toggleFullscreen));
 controlModeButtons.forEach(button=>button.addEventListener('click',()=>setControlMode(button.dataset.controlMode)));
@@ -351,8 +378,20 @@ $('close-achievements').addEventListener('click',()=>$('achievements-dialog').cl
 $('achievements-dialog').addEventListener('click',e=>{if(e.target===$('achievements-dialog'))$('achievements-dialog').close();});
 document.addEventListener('fullscreenchange',syncFullscreenUi);
 document.addEventListener('webkitfullscreenchange',syncFullscreenUi);
-for(const [id,action] of [['left',()=>move(-1)],['right',()=>move(1)],['jump',jump]]){$(id).addEventListener('pointerdown',e=>{e.preventDefault();action();});}
-canvas.addEventListener('pointerdown',e=>{if(state!=='playing')return;if(controlMode==='gesture'&&e.pointerType!=='mouse'){beginGesture(e);return;}e.preventDefault();jump();});
+function canvasPoint(event){const r=canvas.getBoundingClientRect();return{x:(event.clientX-r.left)*W/r.width,y:(event.clientY-r.top)*H/r.height};}
+canvas.addEventListener('pointerdown',e=>{
+ const p=canvasPoint(e);e.preventDefault();
+ if(fullscreenActive()&&p.x>W-62&&p.y<62){toggleFullscreen();return;}
+ if(state==='paused'){resume();return;}
+ if(state==='lost'){if(performance.now()-lastDeathAt>250)start();return;}
+ if(state==='resting'){if(activeHalt&&activeHalt.elapsed>=1)activeHalt.remaining=0;return;}
+ if(state!=='playing')return;
+ if(controlMode==='gesture'&&e.pointerType!=='mouse'){beginGesture(e);return;}
+ if(controlMode==='buttons'&&e.pointerType!=='mouse'){
+  if(p.y>H-105){if(p.x<87)move(-1);else if(p.x<166)move(1);else if(p.x>W-140)jump();return;}
+ }
+ jump();
+});
 canvas.addEventListener('pointermove',moveGesture,{passive:false});
 canvas.addEventListener('pointerup',endGesture);
 canvas.addEventListener('pointercancel',cancelGesture);

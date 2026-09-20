@@ -16,7 +16,17 @@
   function lowerBoundZ(items,value){let low=0,high=items.length;while(low<high){const middle=(low+high)>>1;if(items[middle].z<value)low=middle+1;else high=middle;}return low;}
   function gapAt(z){const row=Math.floor(z/180);return row>4&&row%7===5;}
   function isGap(z){return gapAt(z)&&z%180>120;}
-  function elevationAt(world,row,col){if(row<=0)return 0;const wave=Math.sin(row*.76+col*1.45+world*.7)+Math.cos(row*.31-col*1.1);return Math.round(Math.max(0,(wave+2)*1.25))*4;}
+  function storyHeight(row){
+    if(row<=0)return 0;
+    const phase=row%64;
+    if(phase<8)return phase*12;
+    if(phase<18)return 96;
+    if(phase<26)return 96+(phase-18)*12;
+    if(phase<38)return 192;
+    if(phase<54)return 192-(phase-38)*12;
+    return 0;
+  }
+  function elevationAt(world,row,col){if(row<=0)return 0;const detail=Math.round((Math.sin(row*.57+col*1.9+world*.8)+1)*.5)*3;return storyHeight(row)+detail;}
   function speedAt(elapsed){const range=MAX_BASE_SPEED-BASE_SPEED;return BASE_SPEED+range*(1-Math.exp(-Math.max(0,elapsed)/SPEED_TAU));}
   function distanceAt(elapsed){const t=Math.max(0,elapsed),range=MAX_BASE_SPEED-BASE_SPEED;return MAX_BASE_SPEED*t-range*SPEED_TAU*(1-Math.exp(-t/SPEED_TAU));}
   function material(world,type){return type==='milk'?'carton':world===1?'key':world===2?'cloud':'jelly';}
@@ -80,7 +90,7 @@
       const travel=(distanceAt(this.elapsed)-distanceAt(previousElapsed))*this.pathMultiplier;
       const next={x:this.x+(this.lane*100-this.x)*(1-Math.exp(-rules.laneSharpness*dt)),y:this.y,z:old.z+travel};
       let existing=this.grounded?this.supportAt(next.x,next.z,this.y+24):null;
-      if(existing&&existing.id!==this.support){const bothTiles=existing.id.startsWith('tile:')&&this.support?.startsWith('tile:');if(!bothTiles&&Math.abs(existing.height-this.y)>2)existing=null;}
+      if(existing&&existing.id!==this.support){const bothTiles=existing.id.startsWith('tile:')&&this.support?.startsWith('tile:'),rise=existing.height-this.y;if((bothTiles&&(rise>28||rise<-2))||(!bothTiles&&Math.abs(rise)>2))existing=null;}
       if(existing){next.y=existing.height;this.vy=0;}else{if(this.grounded)this.coyoteRemaining=.08;this.grounded=false;this.support=null;next.y+=this.vy*dt-.5*rules.gravity*dt*dt;this.vy-=rules.gravity*dt;}
       let collision=null;
       this.forNearbyObstacles(old.z-140,next.z+160,o=>{const s=this.shape(o);if(s.z+s.depth/2<old.z-80||s.z-s.depth/2>next.z+120)return;
@@ -99,5 +109,5 @@
       if(!this.grounded&&this.y<-25){this.status='falling';this.fallTime=0;this.events.push({type:'fall'});}
     }
   }
-  return{Runner,CAT,BASE_SPEED,MAX_BASE_SPEED,SPEED_TAU,FINISH,WORLD_RULES,speedAt,distanceAt,elevationAt,gapAt,isGap,sweep,properties};
+  return{Runner,CAT,BASE_SPEED,MAX_BASE_SPEED,SPEED_TAU,FINISH,WORLD_RULES,speedAt,distanceAt,storyHeight,elevationAt,gapAt,isGap,sweep,properties};
 });

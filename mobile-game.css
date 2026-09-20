@@ -75,7 +75,7 @@ body.game-touch-locked {
   display: none;
 }
 
-.game-stage[data-control-mode="gesture"][data-game-active="true"] .gesture-hint {
+.game-stage[data-control-mode="gesture"][data-game-active="true"].gesture-tutorial-visible .gesture-hint {
   display: block;
 }
 
@@ -105,6 +105,19 @@ body.game-touch-locked {
 
 .stats .turn-stat {
   color: #9871b3;
+}
+
+.score-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.score-stat em {
+  color: #b86f89;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
 }
 
 .mission-icon.boost {
@@ -157,7 +170,7 @@ body.game-touch-locked {
   color: #674859;
   box-shadow: 0 12px 35px #6d425c2b;
   transform: translate(-50%, -50%);
-  pointer-events: none;
+  pointer-events: auto;
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
 }
@@ -197,14 +210,26 @@ body.game-touch-locked {
   white-space: nowrap;
 }
 
+.activity-banner button {
+  min-width: 44px;
+  min-height: 36px;
+  border: 1px solid #e7cdd7;
+  border-radius: 999px;
+  background: #fff;
+  color: #765267;
+  font-size: 11px;
+  font-weight: 700;
+  touch-action: manipulation;
+}
+
 .stage-fullscreen-button {
   display: none;
   position: absolute;
   z-index: 4;
   top: calc(62px + env(safe-area-inset-top));
   right: 14px;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   align-items: center;
   justify-content: center;
   border: 1px solid #fff9;
@@ -295,6 +320,10 @@ body.fullscreen-fallback-active {
     gap: 7px;
   }
 
+  .score-stat small {
+    display: none;
+  }
+
   .game-event {
     top: 70px;
     padding: 6px 9px;
@@ -313,8 +342,8 @@ body.fullscreen-fallback-active {
   .stage-fullscreen-button {
     top: calc(58px + env(safe-area-inset-top));
     right: 10px;
-    width: 38px;
-    height: 38px;
+    width: 44px;
+    height: 44px;
   }
 
   .control-mode-picker {

@@ -9,8 +9,11 @@
     Object.freeze({id:'heart-hoarder',name:'Heart Hoarder',description:'Collect 25 hearts in one run',bonus:500,test:s=>s.hearts>=25}),
     Object.freeze({id:'self-care',name:'Self Care',description:'Complete a nap and toilet break',bonus:400,test:s=>s.naps>=1&&s.toilets>=1}),
     Object.freeze({id:'first-hundred',name:'Getting Somewhere',description:'Run 100 metres',bonus:250,test:s=>s.distanceM>=100}),
+    Object.freeze({id:'thirty-seconds',name:'Still Purring',description:'Keep running for 30 seconds',bonus:300,test:s=>s.elapsedS>=30}),
     Object.freeze({id:'long-haul',name:'Long Haul',description:'Run 500 metres',bonus:750,test:s=>s.distanceM>=500}),
+    Object.freeze({id:'one-minute',name:'Minute Menace',description:'Keep running for 60 seconds',bonus:800,test:s=>s.elapsedS>=60}),
     Object.freeze({id:'kilometre-cat',name:'Kilometre Cat',description:'Run 1,000 metres',bonus:1500,test:s=>s.distanceM>=1000}),
+    Object.freeze({id:'two-minutes',name:'Nine Lives',description:'Keep running for 120 seconds',bonus:2000,test:s=>s.elapsedS>=120}),
     Object.freeze({id:'endless-menace',name:'Endless Menace',description:'Run 2,500 metres',bonus:3000,test:s=>s.distanceM>=2500}),
     Object.freeze({id:'royal-score',name:'Royal Score',description:'Reach 5,000 points',bonus:1000,test:s=>s.score>=5000})
   ]);

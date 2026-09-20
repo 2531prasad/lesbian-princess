@@ -1,0 +1,327 @@
+/* Mobile interaction guard and fullscreen affordances for the canvas game. */
+body.game-touch-locked {
+  overscroll-behavior: none;
+}
+
+.game-stage {
+  touch-action: none;
+}
+
+.game-stage.game-resting canvas {
+  filter: saturate(.82) brightness(1.04);
+}
+
+.control-mode-picker {
+  display: none;
+  position: absolute;
+  z-index: 7;
+  right: 18px;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid #fff9;
+  border-radius: 999px;
+  background: #fff8f0d9;
+  color: #876c77;
+  font-size: 10px;
+  box-shadow: 0 5px 18px #70425d18;
+  pointer-events: auto;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.control-mode-picker > span {
+  padding: 0 5px 0 7px;
+  font-weight: 700;
+  letter-spacing: .4px;
+}
+
+.control-mode-picker button {
+  min-height: 27px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #876c77;
+  font-size: 10px;
+  touch-action: manipulation;
+}
+
+.control-mode-picker button[aria-pressed="true"] {
+  background: #70425d;
+  color: #fffaf6;
+}
+
+.gesture-hint {
+  display: none;
+  position: absolute;
+  z-index: 4;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  padding: 8px 11px;
+  border: 1px solid #fff9;
+  border-radius: 999px;
+  background: #fff8f0d9;
+  color: #765267;
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.game-stage.game-stage[data-control-mode="gesture"] .touch-controls {
+  display: none;
+}
+
+.game-stage[data-control-mode="gesture"] .gesture-hint {
+  display: block;
+}
+
+.stats .collectible-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.stats .heart-stat {
+  color: #c7597b;
+}
+
+.stats .reward-stat {
+  color: #c78b46;
+}
+
+.stats .turn-stat {
+  color: #9871b3;
+}
+
+.mission-icon.boost {
+  background: #fff0cf;
+  color: #cb8c4b;
+}
+
+.game-event {
+  position: absolute;
+  z-index: 4;
+  top: 76px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 32px);
+  padding: 7px 12px;
+  border: 1px solid #fff9;
+  border-radius: 999px;
+  background: #fff8e8d9;
+  color: #765267;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  box-shadow: 0 6px 20px #70425d18;
+  transform: translateX(-50%);
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.game-event > span:first-child {
+  color: #d28d4f;
+  font-size: 15px;
+}
+
+.activity-banner {
+  position: absolute;
+  z-index: 6;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: min(300px, calc(100% - 32px));
+  padding: 16px 18px;
+  border: 1px solid #fff;
+  border-radius: 18px;
+  background: #fffaf2e8;
+  color: #674859;
+  box-shadow: 0 12px 35px #6d425c2b;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.activity-icon {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  background: #f7e8e0;
+  color: #b9798b;
+  font-size: 22px;
+}
+
+.activity-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.activity-copy b {
+  font: 600 16px 'Outfit', sans-serif;
+}
+
+.activity-copy small {
+  color: #957a81;
+  font-size: 10px;
+}
+
+.activity-banner > strong {
+  color: #a96780;
+  font: 700 18px 'Outfit', sans-serif;
+  white-space: nowrap;
+}
+
+.stage-fullscreen-button {
+  display: none;
+  position: absolute;
+  z-index: 4;
+  top: calc(62px + env(safe-area-inset-top));
+  right: 14px;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #fff9;
+  border-radius: 12px;
+  background: #fff9;
+  color: #70425d;
+  font-size: 21px;
+  line-height: 1;
+  box-shadow: 0 5px 18px #70425d18;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  touch-action: manipulation;
+}
+
+.stage-fullscreen-button:active {
+  transform: translateY(1px);
+}
+
+.game-stage:fullscreen,
+.game-stage.fullscreen-fallback {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100svh;
+  max-height: none;
+  border-radius: 0;
+}
+
+.game-stage:fullscreen .hud,
+.game-stage.fullscreen-fallback .hud {
+  top: calc(20px + env(safe-area-inset-top));
+}
+
+.game-stage:fullscreen .touch-controls,
+.game-stage.fullscreen-fallback .touch-controls {
+  bottom: calc(18px + env(safe-area-inset-bottom));
+}
+
+.game-stage:fullscreen .stage-fullscreen-button,
+.game-stage.fullscreen-fallback .stage-fullscreen-button {
+  display: flex;
+}
+
+@media (pointer: coarse) {
+  .stage-fullscreen-button {
+    display: flex;
+  }
+
+  .control-mode-picker {
+    display: flex;
+  }
+
+  .start-hint:after {
+    content: 'use the on-screen controls to double jump';
+  }
+
+  .game-stage + .game-bottom > span:first-child:after {
+    content: 'Tap arrows to move · tap jump twice';
+  }
+
+  .game-stage[data-control-mode="gesture"] .start-hint:after {
+    content: 'swipe left or right · swipe up to double jump';
+  }
+
+  .game-stage[data-control-mode="gesture"] + .game-bottom > span:first-child:after {
+    content: 'Swipe left/right to move · swipe up twice';
+  }
+}
+
+.game-stage.fullscreen-fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow: hidden;
+}
+
+body.fullscreen-fallback-active {
+  overflow: hidden;
+}
+
+@media (max-width: 520px) {
+  .stats .collectible-stat {
+    gap: 4px;
+    font-size: 10px;
+  }
+
+  .stats {
+    gap: 7px;
+  }
+
+  .game-event {
+    top: 70px;
+    padding: 6px 9px;
+    font-size: 10px;
+  }
+
+  .activity-banner {
+    gap: 9px;
+    padding: 13px 14px;
+  }
+
+  .activity-copy b {
+    font-size: 15px;
+  }
+
+  .stage-fullscreen-button {
+    top: calc(58px + env(safe-area-inset-top));
+    right: 10px;
+    width: 38px;
+    height: 38px;
+  }
+
+  .control-mode-picker {
+    right: 10px;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  .gesture-hint {
+    right: 10px;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-fullscreen-button {
+    transition: none;
+  }
+}

@@ -9,7 +9,7 @@ const themes = [
  {name:'Lavender letters',icon:'⌘',sky:['#ead1fa','#d6c8ee','#f0cfe2'],tile:'#d1bbed',side:'#aa8ac9',edge:'#efe1ff',accent:'#a379ce',wall:'#dccbf0'},
  {name:'Cloud nine',icon:'☁',sky:['#f9d5a4','#f8ddd0','#e6d9f3'],tile:'#ffdeb8',side:'#dcac92',edge:'#fff0d6',accent:'#e6ac71',wall:'#edd5cb'}
 ];
-let W=800,H=490,dpr=1,world=0,state='ready',distance=0,hearts=0,rewards=0,turnCount=0,lane=0,x=0,y=0,vy=0,time=0,last=0,flight=0,fall=0,sound=false,audio;
+let W=800,H=490,dpr=1,cameraFocal=H*1.14,cameraDistance=430,cameraBase=H*.29,cameraLookAt=225,world=0,state='ready',distance=0,hearts=0,rewards=0,turnCount=0,lane=0,x=0,y=0,vy=0,time=0,last=0,flight=0,fall=0,sound=true,audio;
 let activeHalt=null,pausedFrom='playing',activePath=null,eventMessageTimer=0;
 let obstacles=[],pickups=[],rewardPickups=[],turnMarkers=[],speedPaths=[],activityStops=[],particles=[],jumpBuffer=0;
 let courseGeneratedTo=0,obstacleIndex=0,pickupIndex=0,rewardIndex=0,speedFeatureIndex=0,turnFeatureIndex=0,stopFeatureIndex=0,nextObstacleId=0;
@@ -21,11 +21,12 @@ const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const controlModeButtons=[$('control-buttons'),$('control-gesture')];
 let controlMode='buttons',gestureStart=null,hudSnapshot='',skyGradient=null,skyGlow=null,backdropPaintSize='';
 try{controlMode=localStorage.getItem('purrfect-control-mode')==='gesture'?'gesture':'buttons';}catch{}
-function resize(){const r=canvas.getBoundingClientRect();W=r.width;H=r.height;dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);rebuildBackdropPaints();}
+function resize(){const r=canvas.getBoundingClientRect();W=r.width;H=r.height;dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);updateCamera();rebuildBackdropPaints();}
 new ResizeObserver(resize).observe(canvas);
 function announce(text){$('announcement').textContent=text;}
+function updateCamera(){const mobileFrame=W<720||W/Math.max(1,H)<.9;cameraDistance=mobileFrame?620:430;cameraFocal=H*(mobileFrame?.9:1.14);cameraLookAt=225;const catScale=cameraFocal/(cameraDistance+22);cameraBase=mobileFrame?H*.74-cameraLookAt*catScale:H*.29;}
 function rebuildBackdropPaints(){const size=`${W}|${H}|${world}`;if(size===backdropPaintSize)return;const t=themes[world];skyGradient=ctx.createLinearGradient(0,0,0,H);t.sky.forEach((color,index)=>skyGradient.addColorStop(index/2,color));skyGlow=ctx.createRadialGradient(W*.64,H*.15,0,W*.64,H*.15,W*.5);skyGlow.addColorStop(0,'#fff4caad');skyGlow.addColorStop(1,'#fff4ca00');backdropPaintSize=size;}
-function syncControlModeUi(){gameStage.dataset.controlMode=controlMode;controlModeButtons.forEach(button=>{const selected=button.dataset.controlMode===controlMode;button.setAttribute('aria-pressed',String(selected));});const touchControls=gameStage.querySelector('.touch-controls');if(touchControls)touchControls.setAttribute('aria-hidden',String(controlMode!=='buttons'));$('gesture-hint').setAttribute('aria-hidden',String(controlMode!=='gesture'));}
+function syncControlModeUi(){const gameStarted=!['ready','lost','won'].includes(state);gameStage.dataset.controlMode=controlMode;gameStage.dataset.gameActive=String(gameStarted);$('control-mode-picker').hidden=gameStarted;controlModeButtons.forEach(button=>{const selected=button.dataset.controlMode===controlMode;button.setAttribute('aria-pressed',String(selected));});const touchControls=gameStage.querySelector('.touch-controls');if(touchControls)touchControls.setAttribute('aria-hidden',String(controlMode!=='buttons'));$('gesture-hint').setAttribute('aria-hidden',String(!(controlMode==='gesture'&&gameStarted)));}
 function setControlMode(mode){if(mode!=='buttons'&&mode!=='gesture')return;controlMode=mode;try{localStorage.setItem('purrfect-control-mode',mode);}catch{}syncControlModeUi();announce(mode==='gesture'?'Swipe controls enabled. Swipe left or right to move and up to jump.':'Button controls enabled. Use the on-screen arrows and jump button.');}
 function nativeFullscreenElement(){return document.fullscreenElement||document.webkitFullscreenElement||null;}
 function fullscreenActive(){return nativeFullscreenElement()===gameStage||gameStage.classList.contains('fullscreen-fallback');}
@@ -51,7 +52,7 @@ async function toggleFullscreen(){
  if(!entered)enterFallbackFullscreen();else syncFullscreenUi();
 }
 function gameplayTouchLockActive(){return state==='playing'||state==='falling'||state==='resting';}
-function updateGameplayTouchLock(){document.body.classList.toggle('game-touch-locked',gameplayTouchLockActive());gameStage.classList.toggle('game-resting',state==='resting');}
+function updateGameplayTouchLock(){document.body.classList.toggle('game-touch-locked',gameplayTouchLockActive());gameStage.classList.toggle('game-resting',state==='resting');syncControlModeUi();}
 function isInsideGameTouchTarget(target){return target instanceof Node&&(gameStage.contains(target)||Boolean(target.closest?.('.toolbar')));}
 function blockOutsideGameTouch(event){
  if(!gameplayTouchLockActive()||isInsideGameTouchTarget(event.target))return;
@@ -68,6 +69,8 @@ function updateGameEvent(dt){if(eventMessageTimer>0){eventMessageTimer=Math.max(
 function setActivityBanner(stop){$('activity-icon').textContent=stop.type==='sleep'?'☾':'🚽';$('activity-title').textContent=stop.type==='sleep'?'Nap time':'Bathroom break';$('activity-detail').textContent=stop.type==='sleep'?'Resting paws for ten seconds':'A quick five-second break';$('activity-timer').textContent=`${Math.ceil(stop.remaining??stop.duration)}s`;$('activity-banner').hidden=false;}
 function clearActivityBanner(){$('activity-banner').hidden=true;}
 function tone(frequency=500,duration=.1){if(!sound)return;try{audio ||= new (window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.setValueAtTime(frequency,audio.currentTime);o.frequency.exponentialRampToValueAtTime(frequency*1.4,audio.currentTime+duration);g.gain.setValueAtTime(.06,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+duration);}catch{}}
+function melody(notes,duration=.08,spacing=.055){if(!sound||!notes.length)return;tone(notes[0],duration);notes.slice(1).forEach((frequency,index)=>setTimeout(()=>tone(frequency,duration),(index+1)*spacing*1000));}
+function syncSoundUi(){const button=$('sound');button.setAttribute('aria-pressed',String(sound));button.setAttribute('aria-label',sound?'Turn sound off':'Turn sound on');button.querySelector('.sound-slash').hidden=sound;}
 function floorHeight(z,lane){return (world===1?10:0)+CatPhysics.elevationAt(world,Math.floor(z/180),lane);}
 function featureBlocksObstacle(z){return speedPaths.some(p=>z>p.start-75&&z<p.end+75)||turnMarkers.some(t=>Math.abs(t.z-z)<90)||activityStops.some(s=>Math.abs(s.z-z)<170);}
 function generateCourseUntil(limit){
@@ -123,15 +126,15 @@ function hud(){const speed=(runner.speed/CatPhysics.BASE_SPEED).toFixed(1),snaps
 function setWorld(value){if(!Number.isInteger(value)||value<0||value>2)throw new Error('Choose world 0, 1, or 2.');world=value;reset();$('world-label').textContent=themes[world].name;$('world-emoji').textContent=themes[world].icon;document.querySelectorAll('[data-world]').forEach(b=>{const selected=+b.dataset.world===world;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',selected);b.querySelector('.world-check').textContent=selected?'✓':'↗';});announce(themes[world].name+' selected. Ready to play.');}
 function showOverlay(kicker,title,copy,button){clearActivityBanner();$('loss-photo').hidden=state!=='lost';$('overlay').classList.toggle('loss-overlay',state==='lost');$('overlay-kicker').textContent=kicker;$('overlay-title').textContent=title;$('overlay-copy').innerHTML=copy;$('play').innerHTML=button+' <span>▸</span>';$('overlay').classList.remove('hidden');}
 function reset(){state='ready';updateGameplayTouchLock();distance=0;hearts=0;rewards=0;turnCount=0;lane=0;x=0;y=0;vy=0;fall=0;flight=0;jumpBuffer=0;activeHalt=null;pausedFrom='playing';activePath=null;eventMessageTimer=0;jumpAnimation='none';jumpAnimationProgress=1;hudSnapshot='';makeCourse();runner.reset(world,obstacles);hideGameEvent();syncRunner();hud();$('pause').disabled=true;$('pause').textContent='Ⅱ';$('pause').setAttribute('aria-label','Pause game');$('world-caption').hidden=false;showOverlay('A WORLD MADE FOR YOU','Hey, pretty kitty.','A tiny adventure. A whole lot of heart.<br>Ready to land on your paws?','Let’s play');$('start-hint').hidden=false;}
-function start(){if(state==='paused'){resume();return;}if(state!=='ready')reset();state='playing';updateGameplayTouchLock();$('overlay').classList.add('hidden');$('pause').disabled=false;$('world-caption').hidden=true;canvas.focus({preventScroll:true});tone(420,.12);announce('Adventure started. Double jump, ride the automatic turns, chase rewards, and use the accelerated paths.');}
+function start(){if(state==='paused'){resume();return;}if(state!=='ready')reset();state='playing';updateGameplayTouchLock();$('overlay').classList.add('hidden');$('pause').disabled=false;$('world-caption').hidden=true;canvas.focus({preventScroll:true});melody([420,560,720],.08,.06);announce('Adventure started. Double jump, ride the automatic turns, chase rewards, and use the accelerated paths.');}
 function pause(){if(state!=='playing'&&state!=='resting')return;pausedFrom=state;state='paused';updateGameplayTouchLock();$('pause').textContent='▸';$('pause').setAttribute('aria-label','Resume game');showOverlay('A LITTLE PAWS','Take your time.','Your daydream will be right here.','Keep going');announce('Game paused.');}
 function resume(){state=pausedFrom==='resting'?'resting':'playing';updateGameplayTouchLock();last=performance.now();$('overlay').classList.add('hidden');if(state==='resting'&&activeHalt)setActivityBanner(activeHalt);$('pause').textContent='Ⅱ';$('pause').setAttribute('aria-label','Pause game');canvas.focus({preventScroll:true});}
 function jump(){if(state==='playing')runner.jump();}
-function move(direction){if(state==='playing'){runner.steer(direction);lane=runner.lane;}}
+function move(direction){if(state==='playing'){const previousLane=runner.lane;runner.steer(direction);lane=runner.lane;if(lane!==previousLane)tone(direction<0?310:360,.045);}}
 function beginGesture(event){if(controlMode!=='gesture'||state!=='playing'||event.pointerType==='mouse'||gestureStart)return;gestureStart={x:event.clientX,y:event.clientY,pointerId:event.pointerId};try{canvas.setPointerCapture(event.pointerId);}catch{}event.preventDefault();}
 function endGesture(event){const start=gestureStart;if(!start||event.pointerId!==start.pointerId){return;}gestureStart=null;try{canvas.releasePointerCapture(event.pointerId);}catch{}const dx=event.clientX-start.x,dy=event.clientY-start.y,threshold=Math.max(28,Math.min(58,Math.min(W,H)*.08));if(state==='playing'&&Math.max(Math.abs(dx),Math.abs(dy))>=threshold){if(Math.abs(dx)>Math.abs(dy))move(dx<0?-1:1);else if(dy<0)jump();}event.preventDefault();}
 function cancelGesture(){gestureStart=null;}
-function end(won=false){if(state!=='playing'&&state!=='falling')return;state=won?'won':'lost';updateGameplayTouchLock();$('pause').disabled=true;$('start-hint').hidden=true;const score=`${hearts} heart${hearts===1?'':'s'} · ${rewards} reward${rewards===1?'':'s'} · ${turnCount} turn${turnCount===1?'':'s'} in ${Math.floor(distance/10)} m.`;showOverlay(won?'ROYALLY WELL DONE':'SOFT LANDINGS, ALWAYS',won?'That’s my girl.':'Oh no, you lost!',score+'<br>'+(won?'A whole little world, conquered by you.':'Even princesses miss a jump. Try again?'),won?'Another daydream':'One more life');announce((won?'Course complete. ':'Missed a jump. ')+score);if(won){for(let i=0;i<60;i++)particles.push({x:Math.random()*W,y:Math.random()*H,vy:-Math.random()*80,vx:(Math.random()-.5)*100,life:4,color:['#dc6f91','#b38ccc','#eab56e'][i%3]});tone(740,.35);}else tone(190,.2);}
+function end(won=false){if(state!=='playing'&&state!=='falling')return;state=won?'won':'lost';updateGameplayTouchLock();$('pause').disabled=true;$('start-hint').hidden=true;const score=`${hearts} heart${hearts===1?'':'s'} · ${rewards} reward${rewards===1?'':'s'} · ${turnCount} turn${turnCount===1?'':'s'} in ${Math.floor(distance/10)} m.`;showOverlay(won?'ROYALLY WELL DONE':'SOFT LANDINGS, ALWAYS',won?'That’s my girl.':'Oh no, you lost!',score+'<br>'+(won?'A whole little world, conquered by you.':'Even princesses miss a jump. Try again?'),won?'Another daydream':'One more life');announce((won?'Course complete. ':'Missed a jump. ')+score);if(won){for(let i=0;i<60;i++)particles.push({x:Math.random()*W,y:Math.random()*H,vy:-Math.random()*80,vx:(Math.random()-.5)*100,life:4,color:['#dc6f91','#b38ccc','#eab56e'][i%3]});melody([740,880,1040],.12,.08);}else melody([190,150,110],.12,.08);}
 function updatePathState(){
  const next=speedPaths.find(path=>distance>=path.start&&distance<path.end)||null;
  if(next===activePath)return;
@@ -140,13 +143,13 @@ function updatePathState(){
  runner.pathMultiplier=multiplier;
  runner.speed=CatPhysics.BASE_SPEED*Math.exp(CatPhysics.RAMP*runner.elapsed)*multiplier;
  eventMessageTimer=0;
- if(activePath){setGameEvent('⚡',`Accelerated path · ${activePath.multiplier.toFixed(1)}×`);announce(`Accelerated path active at ${activePath.multiplier.toFixed(1)} times speed.`);}
- else hideGameEvent();
+ if(activePath){setGameEvent('⚡',`Accelerated path · ${activePath.multiplier.toFixed(1)}×`);melody([520,680,860],.06,.05);announce(`Accelerated path active at ${activePath.multiplier.toFixed(1)} times speed.`);}
+ else {hideGameEvent();tone(250,.055);}
 }
 function collectReward(label='Reward +1',icon='✦'){
  rewards++;
  flashGameEvent(icon,label);
- tone(680+rewards%4*80,.1);
+ melody([680+rewards%4*80,820+rewards%3*70,980],.07,.045);
  const p=project(x,y+50,22);
  for(let i=0;i<7;i++)particles.push({x:p.x,y:p.y,vx:(Math.random()-.5)*100,vy:-70-Math.random()*80,life:1.2,color:'#ffe9a6'});
  hud();
@@ -162,7 +165,7 @@ function beginHalt(stop){
  hideGameEvent();
  updateGameplayTouchLock();
  setActivityBanner(activeHalt);
- tone(stop.type==='sleep'?260:210,.16);
+ melody(stop.type==='sleep'?[280,230,180]:[420,320,250],.11,.08);
  announce(stop.type==='sleep'?'Nap time. The run is resting for 10 seconds.':'Bathroom break. The run is resting for 5 seconds.');
 }
 function updateHalt(dt){
@@ -177,7 +180,7 @@ function updateHalt(dt){
  clearActivityBanner();
  last=performance.now();
  announce(type==='sleep'?'Nap complete. Back to the daydream.':'Break complete. Back to the daydream.');
- tone(520,.12);
+ melody([520,680,840],.08,.055);
 }
 function handleCourseEvents(previousDistance){
  if(state!=='playing')return;
@@ -194,10 +197,11 @@ function handleCourseEvents(previousDistance){
   lane=runner.lane;
   turnCount++;
   collectReward('Hard turn reward +1','↪');
+  melody(turn.direction<0?[360,500,700]:[700,500,360],.06,.045);
   announce(`Automatic hard turn ${turn.direction<0?'left':'right'} completed. Reward earned.`);
  });
 }
-function project(wx,wy,wz){const f=H*1.14;const s=f/Math.max(45,wz+430);return{x:W*.5+wx*s,y:H*.29+(225-wy)*s,s};}
+function project(wx,wy,wz){const s=cameraFocal/Math.max(45,wz+cameraDistance);return{x:W*.5+wx*s,y:cameraBase+(cameraLookAt-wy)*s,s};}
 function polygon(points,fill,stroke){ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=.6;ctx.stroke();}}
 function poly3(points,fill,stroke){polygon(points.map(p=>project(...p)),fill,stroke);}
 function box(wx,z,width,depth,height,color,edge,side,base=0){const a=wx-width/2,b=wx+width/2,c=z-depth/2,d=z+depth/2;poly3([[a,base,c],[b,base,c],[b,height,c],[a,height,c]],side);poly3([[b,base,c],[b,base,d],[b,height,d],[b,height,c]],side);poly3([[a,height,c],[b,height,c],[b,height,d],[a,height,d]],color,edge);}
@@ -303,7 +307,7 @@ function draw(){
  if(state==='playing'){const progress=(distance%progressLoop)/progressLoop;ctx.fillStyle='#fff8';ctx.fillRect(0,H-3,W,3);ctx.fillStyle='#ba6488';ctx.fillRect(0,H-3,W*progress,3);}
 }
 function syncRunner(){distance=runner.distance;x=runner.x;y=runner.y;vy=runner.vy;lane=runner.lane;}
-function contactSound(kind,impact){if(!sound)return;tone(kind==='key'?1050:kind==='carton'?230:130,kind==='key'?.026:.075);}
+function contactSound(kind,impact){if(!sound)return;if(kind==='key')melody([920,1160],.035,.03);else if(kind==='carton')melody([230,180],.07,.045);else if(kind==='cloud')melody([520,700],.06,.04);else tone(140,Math.min(.11,.045+impact/3000));}
 function update(dt){
  if(state==='resting'){
   updateHalt(dt);
@@ -313,10 +317,10 @@ function update(dt){
   if(state==='playing')ensureCourseAhead();
   if(state==='playing')updatePathState();
   const events=runner.advance(dt);syncRunner();
-  for(const event of events){if(event.type==='jump'){triggerJumpAnimation();tone(390,.13);}else if(event.type==='land'||event.type==='step')contactSound(event.kind,event.impact);else if(event.type==='fall'){state='falling';updateGameplayTouchLock();tone(140,.13);}else if(event.type==='lost')end();else if(event.type==='won')end(true);}
+  for(const event of events){if(event.type==='jump'){triggerJumpAnimation();event.jumpsUsed===2?melody([520,760,980],.08,.045):tone(390,.13);}else if(event.type==='land'||event.type==='step')contactSound(event.kind,event.impact);else if(event.type==='fall'){state='falling';updateGameplayTouchLock();melody([180,130],.1,.055);}else if(event.type==='lost')end();else if(event.type==='won')end(true);}
  if(state==='playing'){
    handleCourseEvents(previousDistance);
-   if(state==='playing')forCourseRange(pickups,distance-15,distance+60,h=>{if(!h.taken&&Math.abs(h.z-distance-22)<33&&Math.abs(h.lane*laneWidth-x)<42&&y<h.height+20&&y+86>h.height-15){h.taken=true;hearts++;tone(620+hearts%5*60,.08);const p=project(x,y+50,22);for(let i=0;i<5;i++)particles.push({x:p.x,y:p.y,vx:(Math.random()-.5)*80,vy:-60-Math.random()*70,life:1,color:'#fff3b4'});}});
+   if(state==='playing')forCourseRange(pickups,distance-15,distance+60,h=>{if(!h.taken&&Math.abs(h.z-distance-22)<33&&Math.abs(h.lane*laneWidth-x)<42&&y<h.height+20&&y+86>h.height-15){h.taken=true;hearts++;melody([620+hearts%5*60,780+hearts%3*50],.06,.04);const p=project(x,y+50,22);for(let i=0;i<5;i++)particles.push({x:p.x,y:p.y,vx:(Math.random()-.5)*80,vy:-60-Math.random()*70,life:1,color:'#fff3b4'});}});
    if(state==='playing')forCourseRange(rewardPickups,distance-20,distance+65,r=>{if(!r.taken&&Math.abs(r.z-distance-22)<36&&Math.abs(r.lane*laneWidth-x)<44&&y<r.height+22&&y+86>r.height-15){r.taken=true;collectReward();}});
  }
  }else runner.tickSprings(Math.min(dt,1/60),false);
@@ -328,7 +332,7 @@ function update(dt){
 function frame(now){const dt=Math.min(.1,(now-last)/1000||.016);last=now;if(state!=='paused'){time+=dt;update(dt);}draw();requestAnimationFrame(frame);}
 $('play').addEventListener('click',start);
 $('pause').addEventListener('click',()=>state==='paused'?resume():pause());
-$('sound').addEventListener('click',()=>{sound=!sound;$('sound').setAttribute('aria-pressed',String(sound));$('sound').setAttribute('aria-label',sound?'Turn sound off':'Turn sound on');$('sound').querySelector('span').hidden=sound;tone(540);});
+ $('sound').addEventListener('click',()=>{sound=!sound;syncSoundUi();tone(540);});
 fullscreenButtons.forEach(button=>button.addEventListener('click',toggleFullscreen));
 controlModeButtons.forEach(button=>button.addEventListener('click',()=>setControlMode(button.dataset.controlMode)));
 document.addEventListener('fullscreenchange',syncFullscreenUi);
@@ -346,5 +350,6 @@ $('open-note').addEventListener('click',()=>{pause();$('note').showModal();});$(
 if(document.modelContext?.registerTool){const life=new AbortController();const specs=[{name:'read_cat_adventure',description:'Read the current cat adventure world, state, rewards, turns and distance.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true},execute(){return{world:themes[world].name,state,hearts,rewards,turns:turnCount,meters:Math.floor(distance/10),speedMultiplier:Number((runner.speed/CatPhysics.BASE_SPEED).toFixed(2)),halt:activeHalt?{type:activeHalt.type,secondsRemaining:Number(activeHalt.remaining.toFixed(1))}:null};}},{name:'select_cat_world',description:'Select a cat adventure world and reset the game to its ready screen.',inputSchema:{type:'object',properties:{world:{type:'integer',minimum:0,maximum:2}},required:['world'],additionalProperties:false},execute(input){if(!input||Object.keys(input).some(k=>k!=='world'))throw new Error('Provide only a world number.');setWorld(input.world);return{world:themes[world].name,state};}}];for(const spec of specs){try{Promise.resolve(document.modelContext.registerTool(spec,{signal:life.signal})).catch(()=>{});}catch{}}window.addEventListener('pagehide',()=>life.abort(),{once:true});}
 syncFullscreenUi();
 syncControlModeUi();
+syncSoundUi();
 resize();reset();requestAnimationFrame(frame);
 })();

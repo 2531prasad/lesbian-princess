@@ -75,7 +75,7 @@ body.game-touch-locked {
   display: none;
 }
 
-.game-stage[data-control-mode="gesture"] .gesture-hint {
+.game-stage[data-control-mode="gesture"][data-game-active="true"] .gesture-hint {
   display: block;
 }
 

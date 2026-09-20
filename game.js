@@ -134,7 +134,7 @@ function showGestureTutorialOnce(){if(controlMode!=='gesture')return;try{if(loca
 function start(autoFullscreen=true){if(state==='paused'){resume();return;}if(state!=='ready')reset();state='playing';updateGameplayTouchLock();$('overlay').classList.add('hidden');$('pause').disabled=false;$('world-caption').hidden=true;canvas.focus({preventScroll:true});showGestureTutorialOnce();if(autoFullscreen&&coarsePointer&&!fullscreenActive())toggleFullscreen();melody([420,560,720],.08,.06,{name:'start'});announce('Adventure started. Double jump, follow the automatic bends, chase rewards, and choose accelerated paths.');}
 function pause(){if(state!=='playing'&&state!=='resting')return;pausedFrom=state;state='paused';audioBus.cancel();updateGameplayTouchLock();$('pause').textContent='▸';$('pause').setAttribute('aria-label','Resume game');$('overlay').classList.add('hidden');announce('Game paused.');}
 function resume(){state=pausedFrom==='resting'?'resting':'playing';updateGameplayTouchLock();last=performance.now();$('overlay').classList.add('hidden');if(state==='resting'&&activeHalt)setActivityBanner(activeHalt);$('pause').textContent='Ⅱ';$('pause').setAttribute('aria-label','Pause game');canvas.focus({preventScroll:true});}
-function jump(){if(state!=='playing')return;if(!runner.grounded&&runner.jumpsUsed>=2&&jetpackFuel>0){jetpackActive=!jetpackActive;runner.jetpack=jetpackActive;if(jetpackActive){melody([260,390,560],.05,.035,{name:'jetpack-start',type:'sawtooth',gain:.035});announce(`Jetpack active with ${jetpackFuel.toFixed(1)} seconds of fuel.`);}else{tone(210,.05,{name:'jetpack-stop'});announce('Jetpack paused.');}return;}runner.jump();}
+function jump(){if(state!=='playing')return;if(!runner.grounded&&runner.jumpsUsed>=2&&jetpackFuel>0){jetpackActive=!jetpackActive;runner.jetpack=jetpackActive;if(jetpackActive){melody([260,390,560],.05,.035,{name:'jetpack-start',type:'sawtooth',gain:.035});announce(`Jetpack active with ${jetpackFuel.toFixed(1)} seconds of fuel.`);}else{runner.vy=Math.min(0,runner.vy);runner.jumpsUsed=0;runner.coyoteRemaining=0;tone(210,.05,{name:'jetpack-stop'});announce('Jetpack off. Normal fall and double jump restored.');}return;}runner.jump();}
 function move(direction){if(state==='playing'){const previousLane=runner.lane;runner.steer(direction);lane=runner.lane;if(lane!==previousLane)tone(direction<0?310:360,.045);}}
 function beginGesture(event){if(controlMode!=='gesture'||state!=='playing'||event.pointerType==='mouse'||gestureStart)return;gestureStart={x:event.clientX,y:event.clientY,pointerId:event.pointerId,consumed:false};try{canvas.setPointerCapture(event.pointerId);}catch{}event.preventDefault();}
 function moveGesture(event){const start=gestureStart;if(!start||event.pointerId!==start.pointerId||start.consumed)return;const dx=event.clientX-start.x,dy=event.clientY-start.y,threshold=Math.max(28,Math.min(52,Math.min(W,H)*.07)),action=CatInput.classifyGesture(dx,dy,threshold);if(!action)return;start.consumed=true;if(action==='left')move(-1);else if(action==='right')move(1);else jump();if(navigator.vibrate)navigator.vibrate(8);event.preventDefault();}
@@ -199,7 +199,8 @@ function handleCourseEvents(previousDistance){
  if(state!=='playing')return;
  let halted=false;
  forCourseRange(activityStops,previousDistance,distance,stop=>{
-  if(halted||stop.triggered||previousDistance>=stop.z||distance<stop.z||Math.abs(runner.x-stop.lane*laneWidth)>=30)return;
+  const stopFloor=floorHeight(stop.z,stop.lane);
+  if(halted||stop.triggered||previousDistance>=stop.z||distance<stop.z||Math.abs(runner.x-stop.lane*laneWidth)>=30||jetpackActive||y>stopFloor+35)return;
   runner.distance=stop.z;syncRunner();beginHalt(stop);halted=true;
  });
  if(halted)return;

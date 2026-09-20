@@ -91,7 +91,7 @@
       const next={x:this.x+(this.lane*100-this.x)*(1-Math.exp(-rules.laneSharpness*dt)),y:this.y,z:old.z+travel};
       let existing=this.grounded?this.supportAt(next.x,next.z,this.y+24):null;
       if(existing&&existing.id!==this.support){const bothTiles=existing.id.startsWith('tile:')&&this.support?.startsWith('tile:'),rise=existing.height-this.y;if((bothTiles&&(rise>28||rise<-2))||(!bothTiles&&Math.abs(rise)>2))existing=null;}
-      if(existing){next.y=existing.height;this.vy=0;}else{if(this.grounded)this.coyoteRemaining=.08;this.grounded=false;this.support=null;let acceleration=-rules.gravity;if(this.jetpack&&this.jetpackFuel>0){const burn=Math.min(dt,this.jetpackFuel),powered=burn/dt,target=this.baseHeightAt(next.x,next.z)+125,hover=clamp((target-this.y)*16-this.vy*4,-rules.gravity*.7,1800);acceleration=-rules.gravity+(hover+rules.gravity)*powered;this.jetpackFuel=Math.max(0,this.jetpackFuel-burn);if(this.jetpackFuel<=1e-6){this.jetpackFuel=0;this.jetpack=false;this.events.push({type:'jetpack-empty'});}}next.y+=this.vy*dt+.5*acceleration*dt*dt;this.vy=clamp(this.vy+acceleration*dt,-900,620);}
+      if(existing){next.y=existing.height;this.vy=0;}else{if(this.grounded)this.coyoteRemaining=.08;this.grounded=false;this.support=null;let acceleration=-rules.gravity,jetpackEnded=false;if(this.jetpack&&this.jetpackFuel>0){const burn=Math.min(dt,this.jetpackFuel),powered=burn/dt,target=this.baseHeightAt(next.x,next.z)+125,hover=clamp((target-this.y)*16-this.vy*4,-rules.gravity*.7,1800);acceleration=-rules.gravity+(hover+rules.gravity)*powered;this.jetpackFuel=Math.max(0,this.jetpackFuel-burn);if(this.jetpackFuel<=1e-6){this.jetpackFuel=0;this.jetpack=false;jetpackEnded=true;this.events.push({type:'jetpack-empty'});}}next.y+=this.vy*dt+.5*acceleration*dt*dt;this.vy=clamp(this.vy+acceleration*dt,-900,620);if(jetpackEnded){this.vy=Math.min(0,this.vy);this.jumpsUsed=0;this.coyoteRemaining=0;}}
       let collision=null;
       this.forNearbyObstacles(old.z-140,next.z+160,o=>{if(jetpackWasActive)return;const s=this.shape(o);if(s.z+s.depth/2<old.z-80||s.z-s.depth/2>next.z+120)return;
         // Standing on a surface is not a penetration of its solid volume.
@@ -105,7 +105,8 @@
       }
       this.x=next.x;this.distance=next.z-CAT.z;
       const floor=this.supportAt(next.x,next.z,old.y+.1);
-      if(existing){this.land(existing,0);}else if(floor&&next.y<=floor.height&&old.y>=floor.height-.1&&this.vy<=0){this.land(floor,Math.abs(this.vy));}else this.y=next.y;
+      const risingTileRecovery=floor?.id.startsWith('tile:')&&floor.height-old.y<=28;
+      if(existing){this.land(existing,0);}else if(floor&&next.y<=floor.height&&this.vy<=0&&(old.y>=floor.height-.1||risingTileRecovery)){this.land(floor,Math.abs(this.vy));}else this.y=next.y;
       if(!this.grounded&&this.y<-25&&!jetpackWasActive){this.status='falling';this.fallTime=0;this.events.push({type:'fall'});}
     }
   }
